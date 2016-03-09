@@ -35,9 +35,9 @@ deb:
 	rm -rf $(DEBDIR)
 	mkdir -p $(TARGETDIR)/etc/init
 	mkdir -p $(TARGETDIR)/DEBIAN
-	mkdir -p $(TARGETDIR)$(DESTDIR)/lib
+	mkdir -p $(TARGETDIR)$(DESTDIR)/lib/python/$(TARGET)
 	mkdir -p $(TARGETDIR)$(PTHPATH)
-	cp -R lib/* $(TARGETDIR)$(DESTDIR)/lib
+	cp -R lib/python/* $(TARGETDIR)$(DESTDIR)/lib/python/$(TARGET)
 	cp pkg/deb/control $(TARGETDIR)/DEBIAN/control
 	echo "$(DESTDIR)/lib/python" > $(TARGETDIR)$(PTHPATH)/guernsey.pth
 	cd $(DEBDIR) && fakeroot -- dpkg-deb -b $(TARGET) .
