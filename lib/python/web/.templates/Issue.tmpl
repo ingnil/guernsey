@@ -1,0 +1,46 @@
+<!--
+    Guernsey - Library to simplify creating REST web services using Python and Twisted
+    Copyright (C) 2014 Magine Sweden AB
+    Copyright (C) 2016 Ingemar Nilsson
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+
+<html>
+#set global $pageTitle = "Issue %s" % $issue.id
+#include $lookupTemplate("libhead.inc")
+<body>
+<script type="text/javascript" src="/libjs/issue.js"></script>
+<h1>$title</h1>
+<p><a href="/issues/">Up</a></p>
+#if not $issue.found
+<p>Issue not found</p>
+#else
+<p><button type="button" id="remove">Remove</button></p>
+<table>
+<tr><th>Issue ID</th><td id="issue-id">$issue.id</td></tr>
+<tr><th>Timestamp</th><td>$issue.timestamp</td></tr>
+<tr><th>Level</th><td>$issue.level</td></tr>
+</table>
+<h2>Message</h2>
+<p>$issue.message</p>
+<h2>Resource Path</h2>
+<p>$issue.resourcePath</p>
+<h2>Call stack</h2>
+<p><pre>$issue.callStack</pre></p>
+<h2>Exception</h2>
+<p>$issue.exception</p>
+#end if
+</body>
+</html>

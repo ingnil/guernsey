@@ -1,0 +1,8 @@
+Package: guernsey
+Version: 0.1-1
+Maintainer: Ingemar Nilsson <ingemar.nilsson1@gmail.com>
+Architecture: all
+Depends: python, python-twisted, python-cheetah
+Description: REST web service library for Python/Twisted applications
+ This package provides a library of code for Python applications
+ written using the Twisted event-driven network programming framework.
