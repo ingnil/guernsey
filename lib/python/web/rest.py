@@ -1009,6 +1009,21 @@ class RootResource(Resource):
                           dest="group", metavar="GROUP",
                           help="Run daemon as a specified group " \
                               "(Only useful if started as root)")
+        parser.add_option("--enable-ssl", action="store_true", dest="enableSsl",
+                          help="Enable SSL (Default: %default)")
+        parser.add_option("--ssl-port", action="store", type="int",
+                          dest="sslPort", metavar="PORT",
+                          help="Enable SSL (Default: %default)")
+        parser.add_option("--extra-ssl-port", action="append", type="int",
+                          dest="extraSslPorts", metavar="PORT",
+                          help="Extra SSL port to listen on. Multiple instances of this option " \
+                              + "can be specified")
+        parser.add_option("--ssl-private-key", action="store", type="str",
+                          dest="sslPrivateKey", metavar="FILE",
+                          help="Path to SSL private key")
+        parser.add_option("--ssl-certificate", action="store", type="str",
+                          dest="sslCertificate", metavar="FILE",
+                          help="Path to SSL certificate")
         parser.add_option("-f", "--dbfile", action="store", type="str",
                           dest="dbFile", metavar="FILE",
                           help="Database file name (Default: [in-memory database])")
@@ -1032,6 +1047,11 @@ class RootResource(Resource):
         parser.set_defaults(corsAllowMethods=[])
         parser.set_defaults(user=None)
         parser.set_defaults(group=None)
+        parser.set_defaults(enableSsl=False)
+        parser.set_defaults(sslPort=4433)
+        parser.set_defaults(extraSslPorts=[])
+        parser.set_defaults(sslPrivateKey="keys/server.key")
+        parser.set_defaults(sslCertificate="keys/server.crt")
         parser.set_defaults(dbFile=None)
         parser.set_defaults(dbSaveInterval=0)
         parser.set_defaults(showDb=False)
@@ -1075,6 +1095,24 @@ class RootResource(Resource):
             if port not in ignore:
                 reactor.listenTCP(port, site)
 
+    def listenSsl(self, site, ports, ignore=[]):
+        privateKeyFile = open(self.options.sslPrivateKey, "r")
+        privateKey = privateKeyFile.read()
+        privateKeyFile.close()
+        certificateFile = open(self.options.sslCertificate)
+        certificate = certificateFile.read()
+        certificateFile.close()
+        import twisted.internet.ssl as ssl
+        cert = ssl.PrivateCertificate.loadPEM(privateKey + certificate)
+        contextFactory = cert.options()
+
+        import itertools
+        listenPorts = map(lambda x: x[0], itertools.groupby(sorted(ports)))
+
+        for port in listenPorts:
+            if port not in ignore:
+                reactor.listenSSL(port, site, contextFactory)
+
     def _dropPrivileges(self, user, group):
         import pwd, grp
 
@@ -1093,7 +1131,11 @@ class RootResource(Resource):
         self.resetLogging()
         
     def run(self):
-        self.listen(server.Site(self), [self.options.port] + self.options.extraPorts)
+        site = server.Site(self)
+        self.listen(site, [self.options.port] + self.options.extraPorts)
+
+        if self.options.enableSsl:
+            self.listenSsl(site, [self.options.sslPort] + self.options.extraSslPorts)
 
         if self.options.user and self.options.group:
             self._dropPrivileges(self.options.user, self.options.group)

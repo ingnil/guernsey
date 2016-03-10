@@ -37,6 +37,12 @@ First, go to the Guernsey library. Then:
   pip install twisted
   pip install Cheetah
 
+Note that this requires GCC. If you are using CentOS, Fedora or a
+similar Linux distribution, you can just run the following command (as
+root or using sudo):
+
+  yum groupinstall "Development Tools"
+
 ## Install the latest version of Guernsey into the virtual environment
 
   make install-venv
@@ -50,6 +56,51 @@ need to create your virtual environment and install the dependencies
 once. Then activate the virtual environment when developing with
 Guernsey and deactivate when you want to use default Python
 environment instead.
+
+# Additional SSL/TLS requirements
+
+If you want to use SSL/TLS, you need to install some additional
+packages. Make sure that you are in your virtual environment, then
+run:
+
+  pip install pyOpenSSL
+
+If this fails, check that you have the development packages for OpenSSL and libffi installed. For me, running CentOS 7, I had to run the following command (as root or using sudo):
+
+  yum install openssl-devel libffi-devel
+
+Then rerun
+
+  pip install pyOpenSSL
+
+## Generating SSL private key and certificate
+
+These commands generate a simple self-signed certificate that you can
+use for testing. I assume that your current directory is the
+application directory.
+
+  mkdir keys
+  openssl genrsa -out keys/server.key
+  openssl req -new -key keys/server.key -out keys/server.csr
+  openssl x509 -req -days 365 -in keys/server.csr -signkey keys/server.key -out keys/server.crt
+
+## Running your application using SSL
+
+Since SSL support is built into the RootResource class, if you use it
+for your application, you can enable SSL with a few command-line
+arguments:
+
+### Enable SSL (required)
+
+  --enable-ssl 
+
+### Specify SSL ports (optional)
+
+  --ssl-port=443 --extra-ssl-port=4433
+
+### Specify SSL private key and certificate (optional)
+
+  --ssl-private-key=keys/server.key --ssl-certificate=keys/server.crt
 
 # Example applications
 
