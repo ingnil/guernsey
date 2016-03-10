@@ -25,13 +25,17 @@ First, open a new terminal and activate the virtual environment. Then
 go to the example 4 directory and start it, but on the port 8090
 instead:
 
-  % ./bin/deferred-demo.py --log-level-console=DEBUG
+```
+./bin/deferred-demo.py --log-level-console=DEBUG
+```
 
 Go back to your main terminal and make sure you are in your virtual
 environment. Then go to the application directory and start the
 application:
 
-  % ./bin/client-demo.py --log-level-console=DEBUG
+```
+./bin/client-demo.py --log-level-console=DEBUG
+```
 
 Try visiting http://localhost:8080/ in your web browser. It should
 show a simple web page with a link to one subpage, /processes/.
@@ -53,7 +57,9 @@ a web page when the reply from the example 4 web server has arrived.
 
 Now, go to a terminal and run the following command:
 
-  % curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/processes/
+```
+curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/processes/
+```
 
 This will produce a couple of HTTP headers as well as a JSON
 object representing the processes table.

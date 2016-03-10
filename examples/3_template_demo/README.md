@@ -29,7 +29,9 @@ sure that you have the Cheetah template engine installed (should be
 installed if you followed example 2). Then go to the application
 directory and start the application:
 
-  % ./bin/template-demo.py --log-level-console=DEBUG
+```
+./bin/template-demo.py --log-level-console=DEBUG
+```
 
 Try visiting http://localhost:8080/ in your web browser. It should
 show a simple web page with a title and today's date. The title and
@@ -76,11 +78,15 @@ later example.
 Now, to get back on the main track, go to a terminal, and run
 the following command:
 
-  % curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/cities/
+```
+curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/cities/
+```
 
 This will produce a couple of HTTP headers as well as a JSON
 object representing the cities table. Now run the following command:
 
-  % curl -i -H "Accept: text/csv,*/*;q=0.5" http://localhost:8080/cities/
+```
+curl -i -H "Accept: text/csv,*/*;q=0.5" http://localhost:8080/cities/
+```
 
 This should produce the cities table formatted as CSV.

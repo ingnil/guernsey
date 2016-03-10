@@ -24,7 +24,9 @@ To run it, make sure you are in your virtual environment. Also make
 sure that you have the Cheetah template engine installed. Then go to
 the application directory and start the application:
 
-  % ./bin/simple-template-demo.py --log-level-console=DEBUG
+```
+./bin/simple-template-demo.py --log-level-console=DEBUG
+```
 
 Try visiting http://localhost:8080/ in your web browser. It should
 show a simple web page with a title and today's date. The title and
@@ -33,7 +35,9 @@ the rest is provided as a Cheetah template.
 
 Go to another terminal, and run the following command:
 
-  % curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/
+```
+curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/
+```
 
 It will hopefully produce a couple of HTTP headers as well as a JSON
 object. You will probably notice that the JSON object is still a hello
@@ -42,8 +46,10 @@ a getJson() method, so the default is used.
 
 Try adding the following code to the SimpleTemplateDemo class:
 
-        def getJson(self, request):
-    	    return self.getData()
+```
+def getJson(self, request):
+    return self.getData()
+```
 
 Restart the application and run the curl command above again. This
 should return a JSON object containing the same key/value pairs that

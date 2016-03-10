@@ -46,7 +46,9 @@ end. The code contains fairly detailed comments on how this works.
 To run it, make sure you are in your virtual environment. Then go to
 the application directory and start the application:
 
-  % ./bin/deferred-demo.py --log-level-console=DEBUG
+```
+./bin/deferred-demo.py --log-level-console=DEBUG
+```
 
 Try visiting http://localhost:8080/ in your web browser. It should
 show a simple web page with links to two subpages (handled by our two
@@ -81,12 +83,16 @@ the response is complete.
 Now, to get back on the main track, go to a terminal, and run
 the following command:
 
-  % curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/processes/
+```
+curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/processes/
+```
 
 This will produce a couple of HTTP headers as well as a JSON
 object representing the processes table. Now run the following command:
 
-  % curl -i -H "Accept: text/csv,*/*;q=0.5" http://localhost:8080/processes/
+```
+curl -i -H "Accept: text/csv,*/*;q=0.5" http://localhost:8080/processes/
+```
 
 Did you expect that? We actually received the result as HTML. This is
 because we did not care to create a format producer for text/csv, but
@@ -95,14 +101,18 @@ above. Thus, it works as intended. We specified that we want text/csv,
 but that any format is acceptable if text/csv is not available. Try
 removing the */* media type from the line above, like this:
 
-  % curl -i -H "Accept: text/csv" http://localhost:8080/processes/
+```
+curl -i -H "Accept: text/csv" http://localhost:8080/processes/
+```
 
 This should produce a 406 Not Acceptable error. This means that the
 server is unable to produce a response in the requested format.
 
 Try rerunning the following command:
 
-  % curl -i -H "Accept: text/csv,*/*;q=0.5" http://localhost:8080/processes/
+```
+curl -i -H "Accept: text/csv,*/*;q=0.5" http://localhost:8080/processes/
+```
 
 There is currently a bug in the library that is visible in the output
 from the request above. Can you spot what it is? I'll spoil it for

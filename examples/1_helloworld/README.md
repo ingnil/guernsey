@@ -24,7 +24,9 @@ code has ample comments, so it should be easy to follow.
 To run it, make sure you are in your virtual environment, go to the
 application directory and start the application:
 
-  % ./bin/helloworld.py
+```
+./bin/helloworld.py
+```
 
 The application prints a few lines to the console and waits for
 connections. Try visiting http://localhost:8080/ in your web
@@ -34,7 +36,9 @@ no additional messages. This is because the log level is set to
 WARNING as the default. Quit the application with ctrl-c and restart
 it with an additional option:
 
-  % ./bin/helloworld.py --log-level-console=DEBUG
+```
+./bin/helloworld.py --log-level-console=DEBUG
+```
 
 You will se a couple of extra messages compared to the last time. Now
 visit the same URL as above in your web browser. The result should be
@@ -43,7 +47,9 @@ last time.
 
 Go to another terminal, and run the following command:
 
-  % curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/
+```
+curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/
+```
 
 It will hopefully produce a couple of HTTP headers as well as a JSON
 hello world message. This demonstrates the content negotiation
@@ -60,7 +66,9 @@ One more thing before we conclude this document. Guernsey applications
 that inherit from the RootResource class are automatically provided
 with online help. Try running the following command:
 
-  % ./bin/helloworld.py -h
+```
+./bin/helloworld.py -h
+```
 
 This should produce quite a long list of options, with associated
 descriptions and default values, where applicable.
