@@ -740,6 +740,9 @@ class RootResource(Resource):
             self.putChild("js", static.File(os.path.join(self.options.templatePath, "js")))
             self.putChild("images", static.File(os.path.join(self.options.templatePath,
                                                              "images")))
+            if self.options.enableAcme:
+                self.putChild(".well-known", static.File(os.path.join(self.options.templatePath,
+                                                                      ".well-known")))
 
             if not self.disableLibraryTemplates:
                 self.putChild("libcss",
@@ -1001,6 +1004,9 @@ class RootResource(Resource):
                           help="Allowed method for CORS requests (GET, HEAD and POST does " \
                               + "not need to be specified). Multiple instances of this " \
                               + "option can be supplied.")
+        parser.add_option("--enable-acme", action="store_true", dest="enableAcme",
+                          help="Enable the ACME (Automated Certificate Management Environment) " \
+                              + "protocol (Default: %default)")
         parser.add_option("-u", "--user", action="store", type="str",
                           dest="user", metavar="USER",
                           help="Run daemon as a specified user " \
@@ -1045,6 +1051,7 @@ class RootResource(Resource):
         parser.set_defaults(disableLibraryTemplates=False)
         parser.set_defaults(corsAllowOrigins=[])
         parser.set_defaults(corsAllowMethods=[])
+        parser.set_defaults(enableAcme=False)
         parser.set_defaults(user=None)
         parser.set_defaults(group=None)
         parser.set_defaults(enableSsl=False)

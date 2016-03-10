@@ -135,6 +135,24 @@ arguments:
 Example applications are available in the examples directory. They
 each have a README file as well as ample code comments.
 
+# ACME (Letsencrypt) support
+
+By adding the command-line argument ```--enable-acme```, you can
+enable support for the Letsencrypt Webroot plugin. By running
+Letsencrypt with the Webroot plugin, and specifying your template
+directory as the webroot, Letsencrypt can place its challenge files in
+the ```.well-known``` subdirectory of the template directory. This
+allows it to validate ownership of your domain and automatically issue
+an SSL certificate without server downtime.
+
+This requires the server to be bound to the default (privileged) port
+numbers of 80 for HTTP and/or 443 for HTTPS. In order to do this, you
+need to start the server as root, but if you specify a non-privileged
+user and group name using the ```--user``` and ```--group``` CLI
+arguments, the server will drop root privileges and switch to the
+specified nonprivileged user after the sockets have been bound to the
+privileged ports.
+
 # Credits
 
 At the time of initial release, most of this library (excluding the
