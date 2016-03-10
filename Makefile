@@ -27,7 +27,7 @@ FINDCMD1=find . '(' -name '*~' -or -name '*.pyc' -or -name '*.tar.gz' -or -name 
 FINDCMD2=find . -maxdepth 1 '(' -name dist -or -name deb ')'
 PTHPATH=/usr/local/lib/python2.7/dist-packages
 VENVDIR=venv
-VENVLIBDIR=$(VENVDIR)/lib/python2.6/site-packages
+VENVLIBDIR=$(VENVDIR)/lib/python2.7/site-packages
 
 .PHONY: deb dist clean list-clean
 
