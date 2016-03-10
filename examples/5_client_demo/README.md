@@ -37,7 +37,7 @@ application:
 ./bin/client-demo.py --log-level-console=DEBUG
 ```
 
-Try visiting http://localhost:8080/ in your web browser. It should
+Try visiting `http://localhost:8080/` in your web browser. It should
 show a simple web page with a link to one subpage, /processes/.
 
 Try clicking the link named "All Processes" in your web browser. This
@@ -78,22 +78,22 @@ validation and security checks before sending the data to the client,
 so this decode/encode step is useful in most cases even if it may seem
 superfluous at a glance.
 
-Now visit the URL http://localhost:8080/processes/root/ in your web
-browser. This page calls the code in the ProcessesResource instance to
-get the actual data, and then just removes the data items it does not
-want. It also reuses the same template as ProcessesResource, which is
-why there is a link to itself at the top of the page.
+Now visit the URL `http://localhost:8080/processes/root/` in your web
+browser. This page calls the code in the `ProcessesResource` instance
+to get the actual data, and then just removes the data items it does
+not want. It also reuses the same template as `ProcessesResource`,
+which is why there is a link to itself at the top of the page.
 
-Go back to the /processes/ page. Now we will see what happens if we
+Go back to the `/processes/` page. Now we will see what happens if we
 close down the data source. Go to your terminal running the example 4
 application and press CTRL-C. The application should shut down. Reload
 the page.
 
 What happens? It shows an empty table. This is because our error
 handling is quite simple, and we just return an empty list from the
-errback inner method of getProcessList(). We could have thrown an
+errback inner method of `getProcessList()`. We could have thrown an
 exception instead, which would trigger the errback inner method of
-getHtml(), which returns an error page instead. This is left as an
+`getHtml()`, which returns an error page instead. This is left as an
 exercise for the reader.
 
 Now try restarting the example 4 server, and everything should be

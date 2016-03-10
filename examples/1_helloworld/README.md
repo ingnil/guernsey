@@ -29,7 +29,7 @@ application directory and start the application:
 ```
 
 The application prints a few lines to the console and waits for
-connections. Try visiting http://localhost:8080/ in your web
+connections. Try visiting `http://localhost:8080/` in your web
 browser. You should see a short hello world message. If you go back to
 the console where you started the application, you will probably see
 no additional messages. This is because the log level is set to
@@ -63,7 +63,7 @@ response in plain text, you can add a content producer for the
 text/plain media type. More on this in a later example application.
 
 One more thing before we conclude this document. Guernsey applications
-that inherit from the RootResource class are automatically provided
+that inherit from the `RootResource` class are automatically provided
 with online help. Try running the following command:
 
 ```

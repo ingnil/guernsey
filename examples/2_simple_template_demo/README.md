@@ -28,7 +28,7 @@ the application directory and start the application:
 ./bin/simple-template-demo.py --log-level-console=DEBUG
 ```
 
-Try visiting http://localhost:8080/ in your web browser. It should
+Try visiting `http://localhost:8080/` in your web browser. It should
 show a simple web page with a title and today's date. The title and
 the date are provided as key/value pairs to the template engine and
 the rest is provided as a Cheetah template.
@@ -42,9 +42,9 @@ curl -i -H "Accept: application/json,*/*;q=0.5" http://localhost:8080/
 It will hopefully produce a couple of HTTP headers as well as a JSON
 object. You will probably notice that the JSON object is still a hello
 world message. This is because our application class does not provide
-a getJson() method, so the default is used.
+a `getJson()` method, so the default is used.
 
-Try adding the following code to the SimpleTemplateDemo class:
+Try adding the following code to the `SimpleTemplateDemo` class:
 
 ```
 def getJson(self, request):
@@ -53,4 +53,4 @@ def getJson(self, request):
 
 Restart the application and run the curl command above again. This
 should return a JSON object containing the same key/value pairs that
-we provided to the Cheetah template engine in the getHtml() method.
+we provided to the Cheetah template engine in the `getHtml()` method.

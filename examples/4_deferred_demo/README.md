@@ -50,9 +50,9 @@ the application directory and start the application:
 ./bin/deferred-demo.py --log-level-console=DEBUG
 ```
 
-Try visiting http://localhost:8080/ in your web browser. It should
+Try visiting `http://localhost:8080/` in your web browser. It should
 show a simple web page with links to two subpages (handled by our two
-resource classes mentioned above), /processes/ and /root-processes/.
+resource classes mentioned above), `/processes/` and `/root-processes/`.
 
 Try clicking the link named "All Processes" in your web browser. This
 should show a table of all processes running on your computer, with
@@ -61,9 +61,10 @@ creating a deferred object, then creating a process protocol using
 that deferred. This process protocol is then passed to the
 reactor.spawnProcess() method along with the command name and
 arguments. The external command is spawned and the process protocol is
-attached to it. The format producer (getHtml() or getJson() in this
-case) then returns twisted.web.server.NOT_DONE_YET to the framework,
-so that the reactor can serve other clients wile we are waiting.
+attached to it. The format producer (`getHtml()` or `getJson()` in
+this case) then returns `twisted.web.server.NOT_DONE_YET` to the
+framework, so that the reactor can serve other clients while we are
+waiting.
 
 The process protocol takes care of asynchronously handling events
 related to our spawned process. In this case, the process protocol
@@ -74,11 +75,11 @@ it has captured.
 
 The callback chain receives the lines, removes the first (which
 contains the header), splits each remaining line into fields, and
-constructs a ProcessModel instance from the fields. All process models
-are collected in a list, and this list is processed into either HTML
-or JSON depending on the media type requested. Finally, the response
-is sent to the client, and the last callback tells the framework that
-the response is complete.
+constructs a `ProcessModel` instance from the fields. All process
+models are collected in a list, and this list is processed into either
+HTML or JSON depending on the media type requested. Finally, the
+response is sent to the client, and the last callback tells the
+framework that the response is complete.
 
 Now, to get back on the main track, go to a terminal, and run
 the following command:
@@ -95,17 +96,17 @@ curl -i -H "Accept: text/csv,*/*;q=0.5" http://localhost:8080/processes/
 ```
 
 Did you expect that? We actually received the result as HTML. This is
-because we did not care to create a format producer for text/csv, but
-we also specified */* as an acceptable media type in the curl command
-above. Thus, it works as intended. We specified that we want text/csv,
-but that any format is acceptable if text/csv is not available. Try
-removing the */* media type from the line above, like this:
+because we did not care to create a format producer for `text/csv`, but
+we also specified `*/*` as an acceptable media type in the curl command
+above. Thus, it works as intended. We specified that we want `text/csv`,
+but that any format is acceptable if `text/csv` is not available. Try
+removing the `*/*` media type from the line above, like this:
 
 ```
 curl -i -H "Accept: text/csv" http://localhost:8080/processes/
 ```
 
-This should produce a 406 Not Acceptable error. This means that the
+This should produce a `406 Not Acceptable` error. This means that the
 server is unable to produce a response in the requested format.
 
 Try rerunning the following command:
@@ -116,7 +117,7 @@ curl -i -H "Accept: text/csv,*/*;q=0.5" http://localhost:8080/processes/
 
 There is currently a bug in the library that is visible in the output
 from the request above. Can you spot what it is? I'll spoil it for
-you. The Content-Type header contains the value */*, while it should
+you. The `Content-Type` header contains the value `*/*`, while it should
 contain the value text/html. This is because the code currently does
 not differentiate between the requested content type and the actual
 produced content type. This will be fixed in a future release.
