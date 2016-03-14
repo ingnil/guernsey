@@ -46,7 +46,7 @@ deb:
 dist:
 	rm -rf dist
 	mkdir -p $(DISTDIR)
-	cp -R examples lib pkg Makefile $(DISTDIR)
+	cp -R examples devel lib pkg Makefile $(DISTDIR)
 	cd dist && tar zcvf $(TARGET).tar.gz $(TARGET) && rm -rf $(TARGET)
 
 install-venv:
