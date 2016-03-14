@@ -269,6 +269,9 @@ class Resource(resource.Resource):
             for k, v in request.responseHeaders.getAllRawHeaders():
                 self.logger.debug("\t%s: %s", k, v)
 
+    def checkAuth(self, request):
+        return True, None
+
     def render(self, request):
         self.logger.info("render(%r)" % request)
         self.logger.debug("request.method: %s", request.method)
@@ -280,6 +283,10 @@ class Resource(resource.Resource):
         self.logger.debug("Client IP: %s", request.getClientIP())
         self.logger.debug("request.getHost(): %s", request.getHost())
         self.logger.debug("request.getRequestHostname(): %s", request.getRequestHostname())
+
+        authenticated, response = self.checkAuth(request)
+        if not authenticated:
+            return response
 
         from twisted.web import http
         if request.method == "PUT" and len(request.args) == 0:
