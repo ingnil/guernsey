@@ -126,8 +126,12 @@ class PasswordHash(Object):
     @classmethod
     def _passwordToKey(cls, password, salt, rounds, alg):
         cls.logger.debug("_passwordToKey(%r, %r, %r, %r)", password, salt, rounds, alg)
-        import hashlib
-        return hashlib.pbkdf2_hmac(alg, password, salt, rounds)
+        import hashlib, sys
+        if sys.version_info >= (2, 7):
+            return hashlib.pbkdf2_hmac(alg, password, salt, rounds)
+        else:
+            import backports.pbkdf2
+            return backports.pbkdf2.pbkdf2_hmac(alg, password, salt, rounds)
 
     def equal(self, password):
         pwHash = self._passwordToKey(self.alg, password, self.salt, self.rounds)
