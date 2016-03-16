@@ -16,3 +16,18 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
+
+import guernsey.util
+
+class Object(object):
+    logger = None
+
+    def __init__(self):
+        if not self.__class__.logger:
+            self.__class__.logger = util.getLogger(self)
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if not self.__class__.logger:
+            self.__class__.logger = util.getLogger(self)
+

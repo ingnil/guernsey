@@ -22,21 +22,14 @@
 #
 
 import guernsey.util as util
+from guernsey import Object
 
-class Model(object):
-    logger = None
-
+class Model(Object):
     def __init__(self, record=None):
-        if not self.__class__.logger:
-            self.__class__.logger = util.getLogger(self)
+        Object.__init__(self)
         if type(record) == dict:
             for k, v in record.iteritems():
                 setattr(self, k, v)
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        if not self.__class__.logger:
-            self.__class__.logger = util.getLogger(self)
 
     def update(self, newModel):
         for key, value in newModel.__dict__.iteritems():

@@ -30,8 +30,26 @@ import guernsey.util as util
 import guernsey.web.json as json
 import guernsey.web.model as gwm
 import guernsey.db as db
+from guernsey import Object
 
 import logging, os, sys
+
+import zope.interface
+import twisted.python.components
+
+class ISessionData(zope.interface.Interface):
+    pass
+
+class SessionData(Object):
+    user = None
+
+    zope.interface.implements(ISessionData)
+    def __init__(self, session):
+        Object.__init__(self)
+
+twisted.python.components.registerAdapter(SessionData,
+                                          server.Session,
+                                          ISessionData)
 
 class Resource(resource.Resource):
     #
@@ -49,6 +67,9 @@ class Resource(resource.Resource):
     _libraryTemplatePath = os.path.join(_libraryPath, ".templates")
     _appName = "Resource"
     _templateName = None
+    loginUrl = "/login/"
+    requireAuth = False
+    insecureTransportWarning = False
 
     def __init__(self, parent=None, root=None):
         resource.Resource.__init__(self)
@@ -270,7 +291,35 @@ class Resource(resource.Resource):
                 self.logger.debug("\t%s: %s", k, v)
 
     def checkAuth(self, request):
-        return True, None
+        self.logger.debug("checkAuth(%r)", request)
+        if self.requireAuth:
+            user = self.checkLoggedIn(request)
+            if user:
+                self.logger.debug("User logged in as %s", user.username)
+                return True, None
+            else:
+                self.logger.debug("User not logged in, redirecting to login page")
+                self.seeOther(request, self.loginUrl)
+                return False, ""
+        else:
+            return True, None
+
+    def checkLoggedIn(self, request):
+        sessionData = self.getSessionData(request)
+        return sessionData.user
+
+    def checkPermission(self, request, permission=None):
+        self.logger.debug("checkPermission(%r, %r)", request, permission)
+        user = self.checkLoggedIn(request)
+        if not user:
+            if not self.requireAuth:
+                self.logger.warning("Resource asked to check permission, but not "
+                                    "set to require authentication")
+            return False
+        if not permission:
+            permission = "-".join([self.__class__.__name__, request.method])
+            self.logger.debug("Permission not specified, checking default: %r", permission)
+        return user.hasPermission(permission)
 
     def render(self, request):
         self.logger.info("render(%r)" % request)
@@ -283,6 +332,9 @@ class Resource(resource.Resource):
         self.logger.debug("Client IP: %s", request.getClientIP())
         self.logger.debug("request.getHost(): %s", request.getHost())
         self.logger.debug("request.getRequestHostname(): %s", request.getRequestHostname())
+
+        if self.insecureTransportWarning and not request.isSecure():
+            self.logger.warning("Resource accessed through insecure transport")
 
         authenticated, response = self.checkAuth(request)
         if not authenticated:
@@ -361,12 +413,12 @@ class Resource(resource.Resource):
         self._logResponseHeaders(request)
         return " "
 
-    def cleanPostData(self, request, convertToCamelCase=False, convertBool=False):
+    def cleanPostData(self, request, convertToCamelCase=False, convertBool=False, ignore=[]):
         args = {}
         for k, v in request.args.iteritems():
             if convertToCamelCase:
                 k = util.convertToCamelCase(k)
-            if type(v) == list and len(v) == 1:
+            if k not in ignore and type(v) == list and len(v) == 1:
                 v = v[0]
             if convertBool:
                 if v.lower() in ["true", "yes"]:
@@ -432,6 +484,11 @@ class Resource(resource.Resource):
         request.setResponseCode(302)
         self.setLocationAbs(request, newUrl)
         return ""
+
+    def getSessionData(self, request):
+        session = request.getSession()
+        sessionData = ISessionData(session)
+        return sessionData
 
 
 class ConfigVariable(object):
@@ -582,7 +639,21 @@ class DatabaseCollectionResource(DatabaseResource):
             return resultType(self.getTable().iteritems())
 
 class DatabaseEntityResource(DatabaseResource):
-    pass
+    def __init__(self, tableName, id, parent):
+        DatabaseResource.__init__(self, tableName, parent)
+        self.id = id
+
+    def getEntity(self):
+        return self.getTable().get(self.id)
+
+    def setEntity(self, entity):
+        self.getTable().set(self.id, entity)
+
+    def deleteEntity(self):
+        self.getTable().delete(self.id)
+
+    def getId(self):
+        return self.id
 
 #
 # Issue-related model and database classes
