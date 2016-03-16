@@ -22,39 +22,13 @@ import guernsey.web.model as gwm
 import guernsey.protocol.process as gpp
 import guernsey.web.json as json
 import guernsey.util as util
+import guernsey.db as db
+from guernsey import Object
 
 from twisted.internet import defer, reactor
 from twisted.web import server
 
 import os
-
-class Object(object):
-    logger = None
-
-    def __init__(self):
-        if not self.__class__.logger:
-            self.__class__.logger = util.getLogger(self)
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        if not self.__class__.logger:
-            self.__class__.logger = util.getLogger(self)
-
-from zope.interface import Interface, Attribute, implements
-from twisted.python.components import registerAdapter
-from twisted.web.server import Session
-
-class ISessionData(Interface):
-    pass
-
-class SessionData(Object):
-    user = None
-
-    implements(ISessionData)
-    def __init__(self, session):
-        Object.__init__(self)
-
-registerAdapter(SessionData, Session, ISessionData)
 
 class Permission(object):
     all = set([])
@@ -71,22 +45,24 @@ class Permission(object):
     def list(cls):
         return cls.all
 
-class Role(Object):
+class RoleModel(gwm.Model):
     name = None
     all = {}
     subRoles = None
     permissions = None
 
     def __init__(self, name, permissions=[], subRoles=[]):
+        gwm.Model.__init__(self)
+        self.name = name
         self.permissions = set([])
         self.addPermissions(permissions)
-        self.subRoles = set(subroles)
-        Role.all[name] = self
+        self.subRoles = set(subRoles)
+        RoleModel.all[name] = self
 
     def getPermissions(self):
         permissions = self.permissions.copy()
         for subRole in self.subRoles:
-            permissions |= Role.all[subRole].getPermissions()
+            permissions |= RoleModel.all[subRole].getPermissions()
         return permissions
 
     def addPermission(self, perm):
@@ -102,6 +78,9 @@ class Role(Object):
 
     def removePermissions(self, perms):
         self.permissions -= set(perms)
+
+    def setPermissions(self, perms):
+        self.permissions = set(perms)
 
     @classmethod
     def getRole(cls, name):
@@ -134,16 +113,17 @@ class PasswordHash(Object):
             return backports.pbkdf2.pbkdf2_hmac(alg, password, salt, rounds)
 
     def equal(self, password):
-        pwHash = self._passwordToKey(self.alg, password, self.salt, self.rounds)
+        pwHash = self._passwordToKey(password, self.salt, self.rounds, self.alg)
         return pwHash == self.pwHash
 
-class User(Object):
+class UserModel(gwm.Model):
     username = None
     passwordHash = None
     roles = None
     permissions = None
 
     def __init__(self, username, password):
+        gwm.Model.__init__(self)
         self.username = username
         self.setPassword(password)
         self.roles = set([])
@@ -152,20 +132,36 @@ class User(Object):
     def addRole(self, role):
         self.roles.add(role)
 
+    def addRoles(self, roles):
+        self.roles |= set(roles)
+
+    def setRoles(self, roles):
+        self.roles = set(roles)
+
     def removeRole(self, role):
         self.roles.remove(role)
 
     def addPermission(self, perm):
         self.permissions.add(perm)
 
+    def addPermissions(self, perms):
+        self.permissions |= set(perms)
+
+    def setPermissions(self, perms):
+        self.permissions = set(perms)
+
     def removePermission(self, perm):
         self.permissions.remove(perm)
 
     def hasPermission(self, permission):
-        if permission in self.permissions:
+        self.logger.debug("hasPermission(%r)", permission)
+        self.logger.debug("self = %r", self)
+        Permission.add(permission)
+        if "all" in self.permissions or permission in self.permissions:
             return True
         for role in self.roles:
-            if permission in Role.getRole(role).getPermissions():
+            perms = RoleModel.getRole(role).getPermissions()
+            if "all" in perms or permission in perms:
                 return True
         return False
 
@@ -176,16 +172,32 @@ class User(Object):
         return self.passwordHash.equal(password)
 
 
-class SessionResource(rest.Resource):
-    def getSessionData(self, request):
-        session = request.getSession()
-        sessionData = ISessionData(session)
-        return sessionData
+class UserTable(db.Table):
+    def __init__(self):
+        db.Table.__init__(self, "users")
 
-class LoginResource(SessionResource):
+class RoleTable(db.Table):
+    def __init__(self):
+        db.Table.__init__(self, "roles")
+
+class Database(rest.Database):
+    def __init__(self):
+        rest.Database.__init__(self)
+        self.users = UserTable()
+        self.roles = RoleTable()
+
+        adminUser = UserModel("admin", "topsecret")
+        adminUser.addRole("admin")
+        self.users.set(adminUser.username, adminUser)
+
+        self.logger.debug("Creating admin role")
+        adminRole = RoleModel("admin", permissions=["all"])
+        self.roles.set(adminRole.name, adminRole)
+
+class LoginResource(rest.Resource):
+    insecureTransportWarning = True
+
     def getHtml(self, request):
-        if not request.isSecure():
-            self.logger.warning("Login resource accessed through insecure transport")
         return {}
 
     def render_POST(self, request):
@@ -194,46 +206,224 @@ class LoginResource(SessionResource):
         self.logger.debug("args: %r", args)
 
         # TODO: Check user authentication
-
-        sessionData = self.getSessionData(request)
-        sessionData.user = User(args["username"], args["password"])
-        # TODO: Remove the following line
-        sessionData.user.addPermission("ProcessesResource-GET")
+        user = self.getRoot().database.users.get(args.get("username", ""))
+        if user and user.checkPassword(args.get("password", "")):
+            sessionData = self.getSessionData(request)
+            sessionData.user = user
+        else:
+            self.forbidden(request)
+            return "Forbidden"
 
         # TODO: Forward the user to the requested URL, not /
 
         self.seeOther(request, "/")
         return ""
 
-class AuthenticatedResource(SessionResource):
-    loginUrl = "/login/"
+class UsersAdminResource(rest.DatabaseCollectionResource):
+    requireAuth = True
 
-    def __init__(self, parent=None):
+    def __init__(self, parent):
+        rest.DatabaseCollectionResource.__init__(self,
+                                                 UserAdminResource,
+                                                 "users",
+                                                 parent)
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        users = []
+        for username, user in sorted(self.getEntityCollection(),
+                                     key=lambda x: x[0]):
+            user.url = self.resolveUrl(str(request.URLPath()), username)
+            users.append(user)
+
+        roles = self.getDatabase().roles.itervalues()
+        self.logger.debug("Roles: %r", roles)
+
+
+        return {"users": sorted(users, key=lambda x: x.username),
+                "roles": sorted(map(lambda x: x.name, self.getDatabase().roles.itervalues())),
+                "permissions": sorted(Permission.all)}
+
+class UserAdminResource(rest.DatabaseEntityResource):
+    requireAuth = True
+
+    def __init__(self, id, parent):
+        rest.DatabaseEntityResource.__init__(self, "users", id, parent)
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+        
+        u = self.getEntity()
+        if u:
+            user = u
+        else:
+            self.notFound(request)
+            user = UserModel("", "")
+        user.found = bool(u)
+        return {"user": user}
+
+    def render_PUT(self, request):
+        self.logger.debug("render_PUT(%r)", request)
+        args = self.cleanPostData(request, ignore=["roles", "permissions"])
+        self.logger.debug("args: %r", args)
+
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        u = self.getEntity()
+        if u:
+            # Update existing
+            pass
+        else:
+            user = UserModel(self.id, args.get("password", ""))
+            user.setRoles(args.get("roles", []))
+            user.setPermissions(args.get("permissions", []))
+            self.setEntity(user)
+            self.success(request)
+            return ""
+
+    def render_DELETE(self, request):
+        self.logger.debug("render_DELETE(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        u = self.getEntity()
+        if u:
+            self.deleteEntity()
+            self.success(request)
+        else:
+            self.notFound(request)
+        return ""
+
+class RolesAdminResource(rest.DatabaseCollectionResource):
+    requireAuth = True
+
+    def __init__(self, parent):
+        rest.DatabaseCollectionResource.__init__(self,
+                                                 RoleAdminResource,
+                                                 "roles",
+                                                 parent)
+        Permission.add("-".join([self.__class__.__name__, "GET"]))
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        roles = []
+        for rolename, role in sorted(self.getEntityCollection(),
+                                     key=lambda x: x[0]):
+            role.url = self.resolveUrl(str(request.URLPath()), rolename)
+            roles.append(role)
+        return {"roles": roles, "permissions": sorted(Permission.all)}
+
+class RoleAdminResource(rest.DatabaseEntityResource):
+    requireAuth = True
+
+    def __init__(self, id, parent):
+        rest.DatabaseEntityResource.__init__(self, "roles", id, parent)
+        for method in ["GET", "PUT", "DELETE"]:
+            Permission.add("-".join([self.__class__.__name__, method]))
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+        
+        r = self.getEntity()
+        if r:
+            role = r
+        else:
+            self.notFound(request)
+            role = RoleModel("")
+        role.found = bool(r)
+        return {"role": role}
+
+    def render_PUT(self, request):
+        self.logger.debug("render_PUT(%r)", request)
+        args = self.cleanPostData(request, ignore=["permissions"])
+        self.logger.debug("args: %r", args)
+
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        r = self.getEntity()
+        if r:
+            # Update existing
+            pass
+        else:
+            role = RoleModel(self.id, args.get("permissions", []))
+            self.setEntity(role)
+            self.success(request)
+            return ""
+
+    def render_DELETE(self, request):
+        self.logger.debug("render_DELETE(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        r = self.getEntity()
+        if r:
+            self.deleteEntity()
+            self.success(request)
+        else:
+            self.notFound(request)
+        return ""
+
+class PermissionsResource(rest.Resource):
+    requireAuth = True
+
+    def __init__(self, parent):
         rest.Resource.__init__(self, parent)
 
-    def checkAuth(self, request):
-        self.logger.debug("checkAuth(%r)", request)
-        user = self.checkLoggedIn(request)
-        if user:
-            self.logger.debug("User logged in as %s", user.username)
-            return True, None
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
         else:
-            self.logger.debug("User not logged in, redirecting to login page")
-            self.seeOther(request, self.loginUrl)
-            return False, ""
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
 
-    def checkLoggedIn(self, request):
-        sessionData = self.getSessionData(request)
-        return sessionData.user
+        return {"permissions": sorted(Permission.all, key=lambda x: x)}
 
-    def checkPermission(self, request, permission=None):
-        self.logger.debug("checkPermission(%r, %r)", request, permission)
-        user = self.checkLoggedIn(request)
-        if not user:
-            return False
-        if not permission:
-            permission = "-".join([self.__class__.__name__, request.method])
-        return user.hasPermission(permission)
 
 #
 # Create a model class for processes, inheriting from the Guernsey
@@ -254,8 +444,9 @@ class ProcessModel(gwm.Model):
 # example 3.
 #
 
-#class ProcessesResource(rest.Resource):
-class ProcessesResource(AuthenticatedResource):
+class ProcessesResource(rest.Resource):
+    requireAuth = True
+
     #
     # This method was created to allow a child class to use another
     # protocol class (in this case
@@ -516,6 +707,8 @@ class RootProcessesResource(ProcessesResource):
 #
 
 class AuthTest(rest.RootResource):
+    databaseClass = Database
+
     #
     # Set a few usage parameters, used by the online help system
     #
@@ -536,6 +729,10 @@ class AuthTest(rest.RootResource):
         self.putChild("root-processes", RootProcessesResource(self))
 
         self.putChild("login", LoginResource(self))
+
+        self.putChild("user-admin", UsersAdminResource(self))
+        self.putChild("role-admin", RolesAdminResource(self))
+        self.putChild("permissions", PermissionsResource(self))
 
 
 #

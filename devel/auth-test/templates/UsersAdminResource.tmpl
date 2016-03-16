@@ -1,0 +1,94 @@
+<!--
+    Guernsey - Library to simplify creating REST web services using Python and Twisted
+    Copyright (C) 2016 Ingemar Nilsson
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<html>
+  #set global $pageTitle = "User Administration"
+  #include $lookupTemplate("head.inc")
+  <body>
+    <script type="text/javascript" src="/js/UsersAdminResource.js"></script>
+    <h1>$title</h1>
+    <table>
+      <thead>
+	<tr><th>Username</th><th>Roles</th><th>Permissions</th></tr>
+      </thead>
+      <tbody>
+	#for $user in $users
+	<tr>
+	  <td>
+	    #if $user.username == "admin"
+	    $user.username
+	    #else
+	    <a href="$user.url">$user.username</a>
+	    #end if
+	  </td>
+	  <td>
+	    #for $role in $user.roles
+	    #if $role == "admin"
+	    $role
+	    #else
+	    <a href="/role-admin/$role">$role</a>
+	    #end if
+	    #end for
+	  </td>
+	  <td>
+	    #for $permission in $user.permissions
+	    $permission
+	    #end for
+	  </td>
+	</tr>
+	#end for
+      </tbody>
+    </table>
+
+    <h2>Add user</h2>
+    <form id="add-user-form">
+      <table>
+	<tr>
+	  <th>Username</th>
+	  <td><input type="text" name="username" id="username"/></td>
+	</tr>
+	<tr>
+	  <th>Password</th>
+	  <td><input type="password" name="password" id="password"/></td>
+	</tr>
+	<tr>
+	  <th>Roles</th>
+	  <td>
+	    <select name="roles" size="10" multiple="multiple" id="roles">
+	      #for $role in $roles
+	      <option value="$role">$role</option>
+	      #end for
+	    </select>
+	  </td>
+	</tr>
+	<tr>
+	  <th>Permissions</th>
+	  <td>
+	    <select name="permissions" size="10" multiple="multiple" id="permissions">
+	      #for $permission in $permissions
+	      <option value="$permission">$permission</option>
+	      #end for
+	    </select>
+	  </td>
+	</tr>
+	<tr>
+	  <td><button type="button" id="add-user">Add user</button></td>
+	</tr>
+      </table>
+    </form>
+  </body>
+</html>

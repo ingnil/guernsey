@@ -2,9 +2,10 @@
 
 ## Authentication and Authorization
 
-- [ ] User administration resource
-- [ ] Role administration resource
-- [ ] Default administrator user
+- [x] User administration resource
+- [x] Role administration resource
+- [x] Default administrator user
+- [ ] Hard session timeout
 
 ## Other
 

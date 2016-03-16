@@ -1,0 +1,71 @@
+<!--
+    Guernsey - Library to simplify creating REST web services using Python and Twisted
+    Copyright (C) 2016 Ingemar Nilsson
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<html>
+  #set global $pageTitle = "Role Administration"
+  #include $lookupTemplate("head.inc")
+  <body>
+    <script type="text/javascript" src="/js/RolesAdminResource.js"></script>
+    <h1>$title</h1>
+    <p><a href="/">Up</a></p>
+    <table>
+      <thead>
+	<tr><th>Name</th><th>Permissions</th></tr>
+      </thead>
+      <tbody>
+	#for $role in $roles
+	<tr>
+	  <td valign="top">
+	    #if $role.name == "admin"
+	    $role.name
+	    #else
+	    <a href="$role.url">$role.name</a>
+	    #end if
+	  </td>
+	  <td>
+	    #for $permission in $role.permissions
+	    $permission<br />
+	    #end for
+	  </td>
+	</tr>
+	#end for
+      </tbody>
+    </table>
+    <h2>Add role</h2>
+    <form id="add-role-form">
+      <table>
+	<tr>
+	  <th>Name</th>
+	  <td><input type="text" name="name" id="name"/></td>
+	</tr>
+	<tr>
+	  <th>Permissions</th>
+	  <td>
+	    <select name="permissions" size="10" multiple="multiple" id="permissions">
+	      #for $permission in $permissions
+	      <option value="$permission">$permission</option>
+	      #end for
+	    </select>
+	  </td>
+	</tr>
+	<tr>
+	  <td><button type="button" id="add-role">Add role</button></td>
+	</tr>
+      </table>
+    </form>
+  </body>
+</html>

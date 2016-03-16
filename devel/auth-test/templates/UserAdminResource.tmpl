@@ -16,17 +16,32 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <html>
-  #set global $title = "AuthTest"
+  #set global $pageTitle = "User Administration (%s)" % $user.username
   #include $lookupTemplate("head.inc")
-<body>
-<h1>$title</h1>
-<ul>
-<li><a href="processes">All processes</a></li>
-<li><a href="root-processes">Processes owned by root</a></li>
-<li><a href="login">Login</a></li>
-<li><a href="user-admin">User Administration</a></li>
-<li><a href="role-admin">Role Administration</a></li>
-<li><a href="permissions">List of Permissions</a></li>
-</ul>
-</body>
+  <body>
+    <script type="text/javascript" src="/js/UserAdminResource.js"></script>
+    <h1>$title</h1>
+    <p><a href="/user-admin/">Up</a></p>
+    <h2>Roles</h2>
+    <ul>
+      #if len($user.roles) == 0
+      No roles assigned
+      #else
+      #for $role in $user.roles
+      <li><a href="/role-admin/$role">$role</a></li>
+      #end for
+      #end if
+    </ul>
+    <h2>Permissions</h2>
+    <ul>
+      #if len($user.permissions) == 0
+      No permissions assigned
+      #else
+      #for $permission in $user.permissions
+      <li>$permission</li>
+      #end for
+      #end if
+    </ul>
+    <p><button type="button" id="delete-user">Delete user</button></p>
+  </body>
 </html>

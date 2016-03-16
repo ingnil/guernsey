@@ -1,5 +1,6 @@
 <!--
     Guernsey - Library to simplify creating REST web services using Python and Twisted
+    Copyright (C) 2014 Magine Sweden AB
     Copyright (C) 2016 Ingemar Nilsson
 
     This program is free software: you can redistribute it and/or modify
@@ -15,18 +16,14 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
-<html>
-  #set global $title = "AuthTest"
-  #include $lookupTemplate("head.inc")
-<body>
-<h1>$title</h1>
-<ul>
-<li><a href="processes">All processes</a></li>
-<li><a href="root-processes">Processes owned by root</a></li>
-<li><a href="login">Login</a></li>
-<li><a href="user-admin">User Administration</a></li>
-<li><a href="role-admin">Role Administration</a></li>
-<li><a href="permissions">List of Permissions</a></li>
-</ul>
-</body>
-</html>
+
+<head>
+#if $getVar("pageTitle", None)
+#set global $title = $appName + " - " + $pageTitle
+#end if
+<title>$title</title>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+<link rel="stylesheet" href="//ajax.googleapis.com/ajax/libs/jqueryui/1.10.4/themes/ui-lightness/jquery-ui.css" />
+<script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.10.4/jquery-ui.min.js"></script>
+<script src="/js/common.js"></script>
+</head>

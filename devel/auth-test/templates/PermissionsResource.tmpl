@@ -16,17 +16,19 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <html>
-  #set global $title = "AuthTest"
+  #set global $pageTitle = "Permissions"
   #include $lookupTemplate("head.inc")
-<body>
-<h1>$title</h1>
-<ul>
-<li><a href="processes">All processes</a></li>
-<li><a href="root-processes">Processes owned by root</a></li>
-<li><a href="login">Login</a></li>
-<li><a href="user-admin">User Administration</a></li>
-<li><a href="role-admin">Role Administration</a></li>
-<li><a href="permissions">List of Permissions</a></li>
-</ul>
-</body>
+  <body>
+    <h1>$title</h1>
+    <p><a href="/">Up</a></p>
+    <ul>
+      #if len($permissions) == 0
+      No permissions registered
+      #else
+      #for $permission in $permissions
+      <li>$permission</li>
+      #end for
+      #end if
+    </ul>
+  </body>
 </html>
