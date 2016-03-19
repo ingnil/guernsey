@@ -16,23 +16,33 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <html>
-  #set global $pageTitle = "Role Administration (%s)" % $role.name
-  #include $lookupTemplate("head.inc")
+  #set global $pageTitle = "User Administration (%s)" % $user.username
+  #include $lookupTemplate("libhead.inc")
   <body>
-    <script type="text/javascript" src="/js/RoleAdminResource.js"></script>
+    <script type="text/javascript" src="/libjs/UserAdminResource.js"></script>
     <h1>$title</h1>
-    <p><a href="/role-admin/">Up</a></p>
-    <input type="hidden" id="name" value="$role.name"/>
+    <p><a href="..">Up</a></p>
+    <input type="hidden" id="username" value="$user.username"/>
+    <h2>Roles</h2>
+    <ul>
+      #if len($user.roles) == 0
+      No roles assigned
+      #else
+      #for $role in $user.roles
+      <li><a href="/admin/roles/$role">$role</a></li>
+      #end for
+      #end if
+    </ul>
     <h2>Permissions</h2>
     <ul>
-      #if len($role.permissions) == 0
+      #if len($user.permissions) == 0
       No permissions assigned
       #else
-      #for $permission in $role.permissions
+      #for $permission in $user.permissions
       <li>$permission</li>
       #end for
       #end if
     </ul>
-    <p><button type="button" id="delete-role">Delete role</button></p>
+    <p><button type="button" id="delete-user">Delete user</button></p>
   </body>
 </html>

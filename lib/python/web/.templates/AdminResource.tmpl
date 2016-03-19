@@ -16,19 +16,15 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <html>
-  #set global $pageTitle = "Permissions"
-  #include $lookupTemplate("head.inc")
-  <body>
-    <h1>$title</h1>
-    <p><a href="/">Up</a></p>
-    <ul>
-      #if len($permissions) == 0
-      No permissions registered
-      #else
-      #for $permission in $permissions
-      <li>$permission</li>
-      #end for
-      #end if
-    </ul>
-  </body>
+  #set global $pageTitle = "Administration"
+  #include $lookupTemplate("libhead.inc")
+<body>
+<h1>$title</h1>
+<p><a href="..">Up</a></p>
+<ul>
+<li><a href="users">User Administration</a></li>
+<li><a href="roles">Role Administration</a></li>
+<li><a href="permissions">List of Permissions</a></li>
+</ul>
+</body>
 </html>

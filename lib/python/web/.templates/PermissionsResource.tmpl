@@ -16,19 +16,19 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <html>
-  <head>
-    <title>Guernsey Auth Test - Login</title>
-  </head>
+  #set global $pageTitle = "Permissions"
+  #include $lookupTemplate("libhead.inc")
   <body>
-    <h1>Guernsey Auth Test - Login</h1>
-    <form method="POST" action="">
-      <table>
-	<tbody>
-	  <tr><th>Username</th><td><input type="text" name="username"/></td></tr>
-	  <tr><th>Password</th><td><input type="password" name="password"/></td></tr>
-	  <tr><td><input type="submit" value="Login"/></td></tr>
-	</tbody>
-      </table>
-    </form>
+    <h1>$title</h1>
+    <p><a href="..">Up</a></p>
+    <ul>
+      #if len($permissions) == 0
+      No permissions registered
+      #else
+      #for $permission in $permissions
+      <li>$permission</li>
+      #end for
+      #end if
+    </ul>
   </body>
 </html>

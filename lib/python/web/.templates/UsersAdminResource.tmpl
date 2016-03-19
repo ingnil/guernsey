@@ -16,41 +16,65 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <html>
-  #set global $pageTitle = "Role Administration"
-  #include $lookupTemplate("head.inc")
+  #set global $pageTitle = "User Administration"
+  #include $lookupTemplate("libhead.inc")
   <body>
-    <script type="text/javascript" src="/js/RolesAdminResource.js"></script>
+    <script type="text/javascript" src="/libjs/UsersAdminResource.js"></script>
     <h1>$title</h1>
-    <p><a href="/">Up</a></p>
+    <p><a href="..">Up</a></p>
     <table>
       <thead>
-	<tr><th>Name</th><th>Permissions</th></tr>
+	<tr><th>Username</th><th>Roles</th><th>Permissions</th></tr>
       </thead>
       <tbody>
-	#for $role in $roles
+	#for $user in $users
 	<tr>
-	  <td valign="top">
-	    #if $role.name == "admin"
-	    $role.name
+	  <td>
+	    #if $user.username == "admin"
+	    $user.username
 	    #else
-	    <a href="$role.url">$role.name</a>
+	    <a href="$user.url">$user.username</a>
 	    #end if
 	  </td>
 	  <td>
-	    #for $permission in $role.permissions
-	    $permission<br />
+	    #for $role in $user.roles
+	    #if $role == "admin"
+	    $role
+	    #else
+	    <a href="/admin/roles/$role">$role</a>
+	    #end if
+	    #end for
+	  </td>
+	  <td>
+	    #for $permission in $user.permissions
+	    $permission
 	    #end for
 	  </td>
 	</tr>
 	#end for
       </tbody>
     </table>
-    <h2>Add role</h2>
-    <form id="add-role-form">
+
+    <h2>Add user</h2>
+    <form id="add-user-form">
       <table>
 	<tr>
-	  <th>Name</th>
-	  <td><input type="text" name="name" id="name"/></td>
+	  <th>Username</th>
+	  <td><input type="text" name="username" id="username"/></td>
+	</tr>
+	<tr>
+	  <th>Password</th>
+	  <td><input type="password" name="password" id="password"/></td>
+	</tr>
+	<tr>
+	  <th>Roles</th>
+	  <td>
+	    <select name="roles" size="10" multiple="multiple" id="roles">
+	      #for $role in $roles
+	      <option value="$role">$role</option>
+	      #end for
+	    </select>
+	  </td>
 	</tr>
 	<tr>
 	  <th>Permissions</th>
@@ -63,7 +87,7 @@
 	  </td>
 	</tr>
 	<tr>
-	  <td><button type="button" id="add-role">Add role</button></td>
+	  <td><button type="button" id="add-user">Add user</button></td>
 	</tr>
       </table>
     </form>

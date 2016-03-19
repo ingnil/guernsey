@@ -32,7 +32,7 @@ import guernsey.web.model as gwm
 import guernsey.db as db
 from guernsey import Object
 
-import logging, os, sys
+import logging, os, sys, datetime
 
 import zope.interface
 import twisted.python.components
@@ -50,6 +50,9 @@ class SessionData(Object):
 twisted.python.components.registerAdapter(SessionData,
                                           server.Session,
                                           ISessionData)
+
+class Session(server.Session):
+    sessionTimeout = None
 
 class Resource(resource.Resource):
     #
@@ -107,6 +110,13 @@ class Resource(resource.Resource):
             else:
                 return None
         return self.root
+
+    def getDatabase(self):
+        root = self.getRoot()
+        if root:
+            return root.database
+        else:
+            return None
 
     def setTemplateName(self, templateName):
         self._templateName = templateName
@@ -295,11 +305,17 @@ class Resource(resource.Resource):
         if self.requireAuth:
             user = self.checkLoggedIn(request)
             if user:
-                self.logger.debug("User logged in as %s", user.username)
+                self.logger.debug("User logged in as %s", user)
+                if self.checkSessionExpired(request):
+                    request.getSession().expire()
+                    self.logger.debug("Session is expired, redirecting to login page")
+                    self.seeOther(request, self.loginUrl,
+                                  {"redirect-url": str(request.URLPath())})
+                    return False, ""
                 return True, None
             else:
                 self.logger.debug("User not logged in, redirecting to login page")
-                self.seeOther(request, self.loginUrl)
+                self.seeOther(request, self.loginUrl, {"redirect-url": str(request.URLPath())})
                 return False, ""
         else:
             return True, None
@@ -308,18 +324,22 @@ class Resource(resource.Resource):
         sessionData = self.getSessionData(request)
         return sessionData.user
 
+    def checkSessionExpired(self, request):
+        sessionData = self.getSessionData(request)
+        return sessionData.expires < datetime.datetime.utcnow()
+
     def checkPermission(self, request, permission=None):
         self.logger.debug("checkPermission(%r, %r)", request, permission)
         user = self.checkLoggedIn(request)
         if not user:
             if not self.requireAuth:
-                self.logger.warning("Resource asked to check permission, but not "
+                self.logger.warning("Resource asked to check permission, but is not "
                                     "set to require authentication")
             return False
         if not permission:
             permission = "-".join([self.__class__.__name__, request.method])
             self.logger.debug("Permission not specified, checking default: %r", permission)
-        return user.hasPermission(permission)
+        return self.getDatabase().users.hasPermission(user, permission)
 
     def render(self, request):
         self.logger.info("render(%r)" % request)
@@ -333,7 +353,7 @@ class Resource(resource.Resource):
         self.logger.debug("request.getHost(): %s", request.getHost())
         self.logger.debug("request.getRequestHostname(): %s", request.getRequestHostname())
 
-        if self.insecureTransportWarning and not request.isSecure():
+        if (self.insecureTransportWarning or self.requireAuth) and not request.isSecure():
             self.logger.warning("Resource accessed through insecure transport")
 
         authenticated, response = self.checkAuth(request)
@@ -433,10 +453,14 @@ class Resource(resource.Resource):
         import urlparse
         return urlparse.urljoin(baseUrl, relativeUrl)
 
-    def setLocation(self, request, url):
-        self.setLocationAbs(request, self.resolveUrl(str(request.URLPath()), url))
+    def setLocation(self, request, url, params={}):
+        self.setLocationAbs(request, self.resolveUrl(str(request.URLPath()), url), params)
 
-    def setLocationAbs(self, request, url):
+    def setLocationAbs(self, request, url, params={}):
+        if params:
+            import urllib
+            encodedParams = urllib.urlencode(params)
+            url = "?".join([url, encodedParams])
         request.setHeader("Location", url)
 
     def success(self, request):
@@ -448,9 +472,9 @@ class Resource(resource.Resource):
     def noContent(self, request):
         request.setResponseCode(204)
 
-    def seeOther(self, request, url):
+    def seeOther(self, request, url, params={}):
         request.setResponseCode(303)
-        self.setLocation(request, url)
+        self.setLocation(request, url, params)
 
     def badRequest(self, request):
         request.setResponseCode(400)
@@ -613,9 +637,6 @@ class DatabaseResource(Resource):
         Resource.__init__(self, parent)
         self.__tableName = tableName
 
-    def getDatabase(self):
-        return self.getRoot().database
-
     def getTable(self):
         return getattr(self.getDatabase(), self.__tableName)
 
@@ -701,6 +722,159 @@ class IssueTable(db.Table):
         return issueId
 
 #
+# Authentication & Authorization classes
+#
+
+class Permission(object):
+    all = set([])
+
+    @classmethod
+    def add(cls, perm):
+        cls.all.add(perm)
+
+    @classmethod
+    def addAll(cls, perms):
+        cls.all |= perms
+
+    @classmethod
+    def list(cls):
+        return cls.all
+
+class RoleModel(gwm.Model):
+    name = None
+    subRoles = None
+    permissions = None
+
+    def __init__(self, name, permissions=[], subRoles=[]):
+        gwm.Model.__init__(self)
+        self.name = name
+        self.permissions = set([])
+        self.addPermissions(permissions)
+        self.subRoles = set(subRoles)
+
+    def addPermission(self, perm):
+        self.permissions.add(perm)
+
+    def addPermissions(self, perms):
+        self.permissions |= set(perms)
+
+    def removePermission(self, perm):
+        self.permissions.remove(perm)
+
+    def removePermissions(self, perms):
+        self.permissions -= set(perms)
+
+    def setPermissions(self, perms):
+        self.permissions = set(perms)
+
+class PasswordHash(Object):
+    pwHash = None
+    salt = None
+    rounds = None
+    alg = None
+    logger = None
+
+    def __init__(self, password, salt=None, rounds=100000, alg="sha256"):
+        Object.__init__(self)
+        self.salt = salt
+        self.rounds = rounds
+        self.alg = alg
+        if not self.salt:
+            self.salt = os.urandom(16)
+        self.pwHash = self._passwordToKey(password, self.salt, self.rounds, self.alg)
+
+    @classmethod
+    def _passwordToKey(cls, password, salt, rounds, alg):
+        cls.logger.debug("_passwordToKey(%r, %r, %r, %r)", password, salt, rounds, alg)
+        import hashlib, sys
+        if sys.version_info >= (2, 7):
+            return hashlib.pbkdf2_hmac(alg, password, salt, rounds)
+        else:
+            import backports.pbkdf2
+            return backports.pbkdf2.pbkdf2_hmac(alg, password, salt, rounds)
+
+    def equal(self, password):
+        pwHash = self._passwordToKey(password, self.salt, self.rounds, self.alg)
+        return pwHash == self.pwHash
+
+class UserModel(gwm.Model):
+    username = None
+    passwordHash = None
+    roles = None
+    permissions = None
+
+    def __init__(self, username, password):
+        gwm.Model.__init__(self)
+        self.username = username
+        self.setPassword(password)
+        self.roles = set([])
+        self.permissions = set([])
+
+    def addRole(self, role):
+        self.roles.add(role)
+
+    def addRoles(self, roles):
+        self.roles |= set(roles)
+
+    def setRoles(self, roles):
+        self.roles = set(roles)
+
+    def removeRole(self, role):
+        self.roles.remove(role)
+
+    def addPermission(self, perm):
+        self.permissions.add(perm)
+
+    def addPermissions(self, perms):
+        self.permissions |= set(perms)
+
+    def setPermissions(self, perms):
+        self.permissions = set(perms)
+
+    def removePermission(self, perm):
+        self.permissions.remove(perm)
+
+    def setPassword(self, password):
+        self.passwordHash = PasswordHash(password)
+        
+    def checkPassword(self, password):
+        return self.passwordHash.equal(password)
+
+class UserTable(db.Table):
+    def __init__(self, database):
+        db.Table.__init__(self, "users", database=database)
+
+    def hasPermission(self, userId, permission):
+        self.logger.debug("hasPermission(%r, %r)", userId, permission)
+        Permission.add(permission)
+        user = self.get(userId)
+        if user:
+            if "all" in user.permissions or permission in user.permissions:
+                return True
+
+            for roleId in user.roles:
+                perms = self.getDatabase().roles.getPermissions(roleId)
+                if "all" in perms or permission in perms:
+                    return True
+        return False
+
+class RoleTable(db.Table):
+    def __init__(self):
+        db.Table.__init__(self, "roles")
+
+    def getPermissions(self, roleId):
+        role = self.get(roleId)
+        if role:
+            permissions = role.permissions
+            for subRoleId in role.subRoles:
+                subRole = self.get(subRoleId)
+                if subRole:
+                    permissions |= subRole.permissions
+            return permissions
+        else:
+            return set([])
+
+#
 # Database class
 #
 
@@ -708,6 +882,18 @@ class Database(db.Database):
     def __init__(self):
         db.Database.__init__(self)
         self.issues = IssueTable()
+        
+        self.users = UserTable(self)
+        self.logger.debug("Creating admin user")
+        adminUser = UserModel("admin", "topsecret")
+        adminUser.addRole("admin")
+        self.users.set(adminUser.username, adminUser)
+
+        self.roles = RoleTable()
+        self.logger.debug("Creating admin role")
+        adminRole = RoleModel("admin", permissions=["all"])
+        self.roles.set(adminRole.name, adminRole)
+        Permission.add("all")
 
     def __setstate__(self, state):
         db.Database.__setstate__(self, state)
@@ -717,6 +903,274 @@ class Database(db.Database):
         elif not self.issues:
             self.logger.debug("No issue table found, adding to database")
             self.issues = IssueTable()
+
+        if not hasattr(self, "users"):
+            self.logger.debug("User table not found, adding to database")
+            self.users = UserTable(self)
+            self.logger.debug("Creating admin user")
+            adminUser = UserModel("admin", "topsecret")
+            adminUser.addRole("admin")
+            self.users.set(adminUser.username, adminUser)
+        
+        if not hasattr(self, "roles"):
+            self.logger.debug("Role table not found, adding to database")
+            self.roles = RoleTable()
+            self.logger.debug("Creating admin role")
+            adminRole = RoleModel("admin", permissions=["all"])
+            self.roles.set(adminRole.name, adminRole)
+            Permission.add("all")
+
+#
+# Authentication & Authorization resource classes
+#
+
+class LoginResource(Resource):
+    insecureTransportWarning = True
+
+    def getHtml(self, request):
+        args = self.cleanPostData(request, convertToCamelCase=True)
+        return {"redirectUrl": args.get("redirectUrl")}
+
+    def render_POST(self, request):
+        self.logger.debug("render_POST(%r)", request)
+        args = self.cleanPostData(request, convertToCamelCase=True)
+        self.logger.debug("args: %r", args)
+
+        user = self.getDatabase().users.get(args.get("username", ""))
+        if user and user.checkPassword(args.get("password", "")):
+            sessionData = self.getSessionData(request)
+            sessionData.user = user.username
+            
+            import datetime
+            sessionData.expires = datetime.datetime.utcnow() \
+                + datetime.timedelta(seconds=self.getRoot().options.sessionTimeoutHard)
+        else:
+            self.forbidden(request)
+            return "Forbidden"
+
+        redirectUrl = args.get("redirectUrl")
+        if redirectUrl:
+            self.seeOther(request, redirectUrl)
+        else:
+            self.seeOther(request, "/")
+        return ""
+
+class UsersAdminResource(DatabaseCollectionResource):
+    requireAuth = True
+
+    def __init__(self, parent):
+        DatabaseCollectionResource.__init__(self,
+                                            UserAdminResource,
+                                            "users",
+                                            parent)
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        users = []
+        for username, user in sorted(self.getEntityCollection(),
+                                     key=lambda x: x[0]):
+            user.url = self.resolveUrl(str(request.URLPath()), username)
+            users.append(user)
+
+        roles = self.getDatabase().roles.itervalues()
+        self.logger.debug("Roles: %r", roles)
+
+
+        return {"users": sorted(users, key=lambda x: x.username),
+                "roles": sorted(map(lambda x: x.name, self.getDatabase().roles.itervalues())),
+                "permissions": sorted(Permission.all)}
+
+class UserAdminResource(DatabaseEntityResource):
+    requireAuth = True
+
+    def __init__(self, id, parent):
+        DatabaseEntityResource.__init__(self, "users", id, parent)
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+        
+        u = self.getEntity()
+        if u:
+            user = u
+        else:
+            self.notFound(request)
+            user = UserModel("", "")
+        user.found = bool(u)
+        return {"user": user}
+
+    def render_PUT(self, request):
+        self.logger.debug("render_PUT(%r)", request)
+        args = self.cleanPostData(request, ignore=["roles", "permissions"])
+        self.logger.debug("args: %r", args)
+
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        u = self.getEntity()
+        if u:
+            if u.username == "admin":
+                self.forbidden(request)
+                return "Forbidden: Cannot edit built-in user 'admin'."
+            # Update existing
+            pass
+        else:
+            user = UserModel(self.id, args.get("password", ""))
+            user.setRoles(args.get("roles", []))
+            user.setPermissions(args.get("permissions", []))
+            self.setEntity(user)
+            self.success(request)
+            return ""
+
+    def render_DELETE(self, request):
+        self.logger.debug("render_DELETE(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        u = self.getEntity()
+        if u:
+            if u.username == "admin":
+                self.forbidden(request)
+                return "Forbidden: Cannot remove built-in user 'admin'."
+            self.deleteEntity()
+            self.success(request)
+        else:
+            self.notFound(request)
+        return ""
+
+class RolesAdminResource(DatabaseCollectionResource):
+    requireAuth = True
+
+    def __init__(self, parent):
+        DatabaseCollectionResource.__init__(self,
+                                            RoleAdminResource,
+                                            "roles",
+                                            parent)
+        Permission.add("-".join([self.__class__.__name__, "GET"]))
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        roles = []
+        for rolename, role in sorted(self.getEntityCollection(),
+                                     key=lambda x: x[0]):
+            role.url = self.resolveUrl(str(request.URLPath()), rolename)
+            roles.append(role)
+        return {"roles": roles, "permissions": sorted(Permission.all)}
+
+class RoleAdminResource(DatabaseEntityResource):
+    requireAuth = True
+
+    def __init__(self, id, parent):
+        DatabaseEntityResource.__init__(self, "roles", id, parent)
+        for method in ["GET", "PUT", "DELETE"]:
+            Permission.add("-".join([self.__class__.__name__, method]))
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+        
+        r = self.getEntity()
+        if r:
+            role = r
+        else:
+            self.notFound(request)
+            role = RoleModel("")
+        role.found = bool(r)
+        return {"role": role}
+
+    def render_PUT(self, request):
+        self.logger.debug("render_PUT(%r)", request)
+        args = self.cleanPostData(request, ignore=["permissions"])
+        self.logger.debug("args: %r", args)
+
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        r = self.getEntity()
+        if r:
+            if role.name == "admin":
+                self.forbidden(request)
+                return "Forbidden: Cannot edit built-in role 'admin'."
+            # Update existing
+            pass
+        else:
+            role = RoleModel(self.id, args.get("permissions", []))
+            self.setEntity(role)
+            self.success(request)
+            return ""
+
+    def render_DELETE(self, request):
+        self.logger.debug("render_DELETE(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        r = self.getEntity()
+        if r:
+            if r.name == "admin":
+                self.forbidden(request)
+                return "Forbidden: Cannot delete built-in role 'admin'."
+            self.deleteEntity()
+            self.success(request)
+        else:
+            self.notFound(request)
+        return ""
+
+class PermissionsResource(Resource):
+    requireAuth = True
+
+    def __init__(self, parent):
+        Resource.__init__(self, parent)
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return "Forbidden"
+
+        return {"permissions": sorted(Permission.all, key=lambda x: x)}
 
 class TwistedLoggingObserver(twistedlog.PythonLoggingObserver):
     # This method is a modified version of
@@ -731,6 +1185,24 @@ class TwistedLoggingObserver(twistedlog.PythonLoggingObserver):
             eventDict['logLevel'] = level
             twistedlog.PythonLoggingObserver.emit(self, eventDict)
 
+class AdminResource(Resource):
+    usersAdminResourceClass = UsersAdminResource
+    rolesAdminResourceClass = RolesAdminResource
+    permissionsResourceClass = PermissionsResource
+
+    def __init__(self, parent):
+        Resource.__init__(self, parent)
+        
+        self.putChild("users", self.usersAdminResourceClass(self))
+        self.putChild("roles", self.rolesAdminResourceClass(self))
+        self.putChild("permissions", self.permissionsResourceClass(self))
+
+    def getHtml(self, request):
+        return {}
+
+    def getJson(self, request):
+        return {}
+
 class RootResource(Resource):
     options = None
     _numericLogLevel = None
@@ -738,6 +1210,7 @@ class RootResource(Resource):
     _instance = None
     database = None
     databaseClass = Database
+    adminResourceClass = AdminResource
     appName = None
 
     # Log handlers
@@ -832,6 +1305,9 @@ class RootResource(Resource):
     
             self.putChild("config", ConfigResource(self))
             self.putChild("issues", Issues(self))
+            self.putChild("login", LoginResource(self))
+            self.putChild("admin", self.adminResourceClass(self))
+
 
         if self.options.dbFile and os.path.exists(self.options.dbFile):
             self.logger.info("Loading database from file %s", self.options.dbFile)
@@ -1050,22 +1526,22 @@ class RootResource(Resource):
                           help="Log directory to use (Default: %default)")
         parser.add_option("--log-file-max-size", action="store", type="str",
                           dest="logFileMaxSize", metavar="SIZE",
-                          help="Log file max size before rotation (Supports k/K/M postfixes)" \
+                          help="Log file max size before rotation (Supports k/K/M postfixes)"
                           " (Default: %default)")
         parser.add_option("--log-file-max-backups", action="store", type="int",
                           dest="logFileMaxBackups", metavar="INTEGER",
                           help="Number of log file backups to keep (Default: %default)")
         parser.add_option("--app-id", action="store", type="str",
                           dest="appId", metavar="IDENTIFIER",
-                          help="Application identifier. Used e.g. for log file name. " \
+                          help="Application identifier. Used e.g. for log file name. "
                           "(Default: %default)")
         parser.add_option("-p", "--port", action="store", type="int",
                           dest="port", metavar="PORT",
                           help="Port to listen on (Default: %default)")
         parser.add_option("--extra-port", action="append", type="int",
                           dest="extraPorts", metavar="PORT",
-                          help="Extra port to listen on. Multiple instances of this option " \
-                              + "can be specified")
+                          help="Extra port to listen on. Multiple instances of this option "
+                          + "can be specified")
         parser.add_option("-t", "--template-path", action="store", type="str",
                           dest="templatePath", metavar="PATH",
                           help="Path to template files (Default: %default)")
@@ -1075,24 +1551,24 @@ class RootResource(Resource):
                           "(Default: %default)")
         parser.add_option("--cors-allow-origin", action="append", type="str",
                           dest="corsAllowOrigins", metavar="URL",
-                          help="Allowed origin URL pattern for CORS requests. Multiple " \
-                              + "instances of this option can be supplied.")
+                          help="Allowed origin URL pattern for CORS requests. Multiple "
+                          "instances of this option can be supplied.")
         parser.add_option("--cors-allow-method", action="append", type="str",
                           dest="corsAllowMethods", metavar="METHOD",
-                          help="Allowed method for CORS requests (GET, HEAD and POST does " \
-                              + "not need to be specified). Multiple instances of this " \
-                              + "option can be supplied.")
+                          help="Allowed method for CORS requests (GET, HEAD and POST does "
+                          "not need to be specified). Multiple instances of this "
+                          "option can be supplied.")
         parser.add_option("--enable-acme", action="store_true", dest="enableAcme",
-                          help="Enable the ACME (Automated Certificate Management Environment) " \
-                              + "protocol (Default: %default)")
+                          help="Enable the ACME (Automated Certificate Management "
+                          "Environment) protocol (Default: %default)")
         parser.add_option("-u", "--user", action="store", type="str",
                           dest="user", metavar="USER",
-                          help="Run daemon as a specified user " \
-                              "(Only useful if started as root)")
+                          help="Run daemon as a specified user "
+                          "(Only useful if started as root)")
         parser.add_option("-g", "--group", action="store", type="str",
                           dest="group", metavar="GROUP",
-                          help="Run daemon as a specified group " \
-                              "(Only useful if started as root)")
+                          help="Run daemon as a specified group "
+                          "(Only useful if started as root)")
         parser.add_option("--enable-ssl", action="store_true", dest="enableSsl",
                           help="Enable SSL (Default: %default)")
         parser.add_option("--ssl-port", action="store", type="int",
@@ -1100,14 +1576,22 @@ class RootResource(Resource):
                           help="Enable SSL (Default: %default)")
         parser.add_option("--extra-ssl-port", action="append", type="int",
                           dest="extraSslPorts", metavar="PORT",
-                          help="Extra SSL port to listen on. Multiple instances of this option " \
-                              + "can be specified")
+                          help="Extra SSL port to listen on. Multiple instances "
+                          "of this option can be specified")
         parser.add_option("--ssl-private-key", action="store", type="str",
                           dest="sslPrivateKey", metavar="FILE",
                           help="Path to SSL private key")
         parser.add_option("--ssl-certificate", action="store", type="str",
                           dest="sslCertificate", metavar="FILE",
                           help="Path to SSL certificate")
+        parser.add_option("--session-timeout-hard", action="store", type="int",
+                          dest="sessionTimeoutHard", metavar="SECONDS",
+                          help="Hard session timeout, i.e. time before session "
+                          "permanently expires (Default: %default)")
+        parser.add_option("--session-timeout-soft", action="store", type="int",
+                          dest="sessionTimeoutSoft", metavar="SECONDS",
+                          help="Soft session timeout, i.e. time before session "
+                          "expires if user is not active (Default: %default)")
         parser.add_option("-f", "--dbfile", action="store", type="str",
                           dest="dbFile", metavar="FILE",
                           help="Database file name (Default: [in-memory database])")
@@ -1137,6 +1621,8 @@ class RootResource(Resource):
         parser.set_defaults(extraSslPorts=[])
         parser.set_defaults(sslPrivateKey="keys/server.key")
         parser.set_defaults(sslCertificate="keys/server.crt")
+        parser.set_defaults(sessionTimeoutHard=36000)
+        parser.set_defaults(sessionTimeoutSoft=36000)
         parser.set_defaults(dbFile=None)
         parser.set_defaults(dbSaveInterval=0)
         parser.set_defaults(showDb=False)
@@ -1217,6 +1703,10 @@ class RootResource(Resource):
         
     def run(self):
         site = server.Site(self)
+        
+        Session.sessionTimeout = self.options.sessionTimeoutSoft
+        site.sessionFactory = Session
+
         self.listen(site, [self.options.port] + self.options.extraPorts)
 
         if self.options.enableSsl:
@@ -1319,3 +1809,4 @@ class Issue(DatabaseEntityResource):
 
     def deleteIssue(self):
         self.getTable().delete(self.id)
+

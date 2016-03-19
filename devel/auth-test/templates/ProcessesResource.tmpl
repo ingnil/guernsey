@@ -16,20 +16,31 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <html>
-<head>
-  <title>Guernsey Deferred Demo - Processes</title>
-</head>
-<body>
-<h1>Guernsey Deferred Demo - Processes</h1>
-<table>
-<thead>
-<tr><th>User</th><th>Process ID</th><th>CPU Usage (%)</th><th>Memory Usage (%)</th><th>Command</th></tr>
-</thead>
-<tbody>
-#for $process in $processes
-<tr><td>$process.user</td><td>$process.pid</td><td>$process.cpu</td><td>$process.mem</td><td>$process.command</td></tr>
-#end for
-</tbody>
-</table>
-</body>
+  #set global $pageTitle = "Processes"
+  #include $lookupTemplate("head.inc")
+  <body>
+    <h1>$title</h1>
+    <p><a href="..">Up</a></p>
+    <table>
+      <thead>
+	<tr>
+	  <th>User</th>
+	  <th>Process ID</th>
+	  <th>CPU Usage (%)</th>
+	  <th>Memory Usage (%)</th>
+	  <th>Command</th>
+	</tr>
+      </thead>
+      <tbody>
+	#for $process in $processes
+	<tr>
+	  <td>$process.user</td>
+	  <td>$process.pid</td>
+	  <td>$process.cpu</td>
+	  <td>$process.mem</td>
+	  <td>$process.command</td></tr>
+	#end for
+      </tbody>
+    </table>
+  </body>
 </html>
