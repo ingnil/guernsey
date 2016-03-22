@@ -226,15 +226,6 @@ class ProcessesResource(rest.Resource):
 
         def cb(processes):
             self.logger.debug("getHtml() cb(%r)", processes)
-            sessionData = self.getSessionData(request)
-
-            def randString(length):
-                import random, string
-                return ''.join(random.choice(string.ascii_lowercase) for _ in range(length))
-
-            setattr(sessionData, randString(4), randString(8))
-            self.logger.debug("Session Data: %r", sessionData.__dict__)
-
             request.write(self.fillTemplate(model = {
                         "processes": sorted(processes, key=lambda x: int(x.pid))
                         }))
