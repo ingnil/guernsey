@@ -302,8 +302,12 @@ class Resource(resource.Resource):
                     self.logger.debug("User not logged in, HTML not requested, "
                                       "so sending permission denied.")
                     self.forbidden(request)
-                    return False, "Login required. Login at %r. Form-based " \
+                    message = "Login required. Login at %r. Form-based " \
                         "authentication is available." % self.loginUrl
+                    if self.acceptsJson(request):
+                        return False, json.dumps({"error": message})
+                    else:
+                        return False, message
         else:
             return True, None
 
@@ -323,7 +327,6 @@ class Resource(resource.Resource):
     def checkLoggedIn(self, request):
         self.logger.debug("checkLoggedIn(%r)", request)
         sessionId = self.getBearerToken(request)
-        self.logger.debug("Bearer token: %r", sessionId)
         if not sessionId:
             sessionId = self.getSessionIdFromCookie(request)
         if sessionId:
