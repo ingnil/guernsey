@@ -23,7 +23,7 @@
 #
 
 from twisted.web import resource, server
-from twisted.internet import reactor, error
+from twisted.internet import reactor, error, task
 from twisted.python import log as twistedlog
 
 import guernsey.util as util
@@ -32,27 +32,7 @@ import guernsey.web.model as gwm
 import guernsey.db as db
 from guernsey import Object
 
-import logging, os, sys, datetime
-
-import zope.interface
-import twisted.python.components
-
-class ISessionData(zope.interface.Interface):
-    pass
-
-class SessionData(Object):
-    user = None
-
-    zope.interface.implements(ISessionData)
-    def __init__(self, session):
-        Object.__init__(self)
-
-twisted.python.components.registerAdapter(SessionData,
-                                          server.Session,
-                                          ISessionData)
-
-class Session(server.Session):
-    sessionTimeout = None
+import logging, os, sys, datetime, hashlib
 
 class Resource(resource.Resource):
     #
@@ -72,7 +52,10 @@ class Resource(resource.Resource):
     _templateName = None
     loginUrl = "/login/"
     requireAuth = False
+    useDefaultPermissions = True
+    permissionsRegistered = False
     insecureTransportWarning = False
+    sessionCookieName = "GUERNSEY_SESSION"
 
     def __init__(self, parent=None, root=None):
         resource.Resource.__init__(self)
@@ -87,6 +70,8 @@ class Resource(resource.Resource):
         self.templateSearchPath = [ self.templatePath ]
         if not self.disableLibraryTemplates:
             self.templateSearchPath += [self._libraryTemplatePath, self._libraryPath]
+        if self.requireAuth and self.useDefaultPermissions and not self.permissionsRegistered:
+            self.registerDefaultPermissions()
 
     def getParent(self):
         return self.parent
@@ -306,27 +291,46 @@ class Resource(resource.Resource):
             user = self.checkLoggedIn(request)
             if user:
                 self.logger.debug("User logged in as %s", user)
-                if self.checkSessionExpired(request):
-                    request.getSession().expire()
-                    self.logger.debug("Session is expired, redirecting to login page")
-                    self.seeOther(request, self.loginUrl,
-                                  {"redirect-url": str(request.URLPath())})
-                    return False, ""
                 return True, None
             else:
-                self.logger.debug("User not logged in, redirecting to login page")
-                self.seeOther(request, self.loginUrl, {"redirect-url": str(request.URLPath())})
-                return False, ""
+                if self.checkAccept(request, "text/html"):
+                    self.logger.debug("User not logged in and HTML requested, "
+                                      "so redirecting to login page")
+                    self.seeOther(request, self.loginUrl, {"redirect-url": str(request.URLPath())})
+                    return False, ""
+                else:
+                    self.logger.debug("User not logged in, HTML not requested, "
+                                      "so sending permission denied.")
+                    self.forbidden(request)
+                    return False, "Login required. Login at %r. Form-based " \
+                        "authentication is available." % self.loginUrl
         else:
             return True, None
 
-    def checkLoggedIn(self, request):
-        sessionData = self.getSessionData(request)
-        return sessionData.user
+    def getBearerToken(self, request):
+        authHeader = request.getHeader("Authorization")
+        if authHeader and authHeader.startswith("Bearer "):
+            return authHeader[7:]
+        else:
+            None
 
-    def checkSessionExpired(self, request):
-        sessionData = self.getSessionData(request)
-        return sessionData.expires < datetime.datetime.utcnow()
+    def getSessionIdFromCookie(self, request):
+        return request.getCookie(self.sessionCookieName)
+
+    def setSessionCookie(self, request, value):
+        request.addCookie(self.sessionCookieName, value, path="/")
+
+    def checkLoggedIn(self, request):
+        self.logger.debug("checkLoggedIn(%r)", request)
+        sessionId = self.getBearerToken(request)
+        self.logger.debug("Bearer token: %r", sessionId)
+        if not sessionId:
+            sessionId = self.getSessionIdFromCookie(request)
+        if sessionId:
+            sessionModel = self.getDatabase().sessions.get(sessionId)
+            if sessionModel:
+                return sessionModel.username
+        return False
 
     def checkPermission(self, request, permission=None):
         self.logger.debug("checkPermission(%r, %r)", request, permission)
@@ -337,9 +341,23 @@ class Resource(resource.Resource):
                                     "set to require authentication")
             return False
         if not permission:
-            permission = "-".join([self.__class__.__name__, request.method])
+            permission = self.getDefaultPermission(request.method)
             self.logger.debug("Permission not specified, checking default: %r", permission)
         return self.getDatabase().users.hasPermission(user, permission)
+
+    def getDefaultPermission(self, method):
+        return "-".join([self.__class__.__name__, method])
+
+    def registerDefaultPermissions(self, methods=[]):
+        if len(methods) > 0:
+            for method in methods:
+                Permission.add(self.getDefaultPermission(method))
+        else:
+            for attr in dir(self):
+                if callable(getattr(self, attr)) and attr.startswith("render_"):
+                    self.logger.debug("Adding permission: %r",
+                                      self.getDefaultPermission(attr[7:]))
+                    Permission.add(self.getDefaultPermission(attr[7:]))
 
     def render(self, request):
         self.logger.info("render(%r)" % request)
@@ -509,11 +527,6 @@ class Resource(resource.Resource):
         self.setLocationAbs(request, newUrl)
         return ""
 
-    def getSessionData(self, request):
-        session = request.getSession()
-        sessionData = ISessionData(session)
-        return sessionData
-
 
 class ConfigVariable(object):
     def __init__(self, name, defaultValue="", desc=""):
@@ -644,6 +657,8 @@ class DatabaseCollectionResource(DatabaseResource):
     def __init__(self, entityResourceClass, tableName, parent):
         DatabaseResource.__init__(self, tableName, parent)
         self.__entityResourceClass = entityResourceClass
+        # Create an instance of the child resource to register permissions
+        self.__entityResourceClass("", self)
 
     def getChild(self, name, request):
         if len(name) > 0:
@@ -786,7 +801,6 @@ class PasswordHash(Object):
     @classmethod
     def _passwordToKey(cls, password, salt, rounds, alg):
         cls.logger.debug("_passwordToKey(%r, %r, %r, %r)", password, salt, rounds, alg)
-        import hashlib, sys
         if sys.version_info >= (2, 7):
             return hashlib.pbkdf2_hmac(alg, password, salt, rounds)
         else:
@@ -874,6 +888,65 @@ class RoleTable(db.Table):
         else:
             return set([])
 
+class SessionModel(gwm.Model):
+    sessionId = None
+    username = None
+    expiresHard = None
+    expiresSoft = None
+    sessionTimeoutSoft = None
+
+    def __init__(self, username, sessionTimeoutHard, sessionTimeoutSoft):
+        self.sessionId = hashlib.sha1(os.urandom(16)).hexdigest()
+        self.username = username
+        now = datetime.datetime.utcnow()
+        self.expiresHard = now + datetime.timedelta(seconds=sessionTimeoutHard)
+        self.expiresSoft = now + datetime.timedelta(seconds=sessionTimeoutSoft)
+        self.sessionTimeoutSoft = sessionTimeoutSoft
+
+    def isSoftExpired(self):
+        return self.expiresSoft < datetime.datetime.utcnow()
+
+    def isHardExpired(self):
+        return self.expiresHard < datetime.datetime.utcnow()
+
+    def isExpired(self):
+        return self.isSoftExpired() or self.isHardExpired()
+
+    def touch(self):
+        self.expiresSoft = datetime.datetime.utcnow() \
+            + datetime.timedelta(seconds=self.sessionTimeoutSoft)
+
+class SessionTable(db.Table):
+    def __init__(self):
+        db.Table.__init__(self, "sessions", persist=False)
+
+    def _startClean(self):
+        t = task.LoopingCall(self._cleanExpired)
+        t.start(900, now=False)
+
+    def _cleanExpired(self):
+        remove = []
+        for session in self.sessions.itervalues():
+            if session.isExpired():
+                remove.append(session.sessionId)
+        for sid in remove:
+            self.delete(sid)
+
+    def create(self, username, sessionTimeoutHard, sessionTimeoutSoft):
+        session = SessionModel(username, sessionTimeoutHard, sessionTimeoutSoft)
+        self.set(session.sessionId, session)
+        return session.sessionId
+
+    def get(self, id, default=None, getCopy=True):
+        session = db.Table.get(self, id, default, getCopy)
+        if session:
+            if session.isExpired():
+                self.delete(id)
+                return None
+            else:
+                session.touch()
+        return session
+
 #
 # Database class
 #
@@ -894,6 +967,8 @@ class Database(db.Database):
         adminRole = RoleModel("admin", permissions=["all"])
         self.roles.set(adminRole.name, adminRole)
         Permission.add("all")
+
+        self.sessions = SessionTable()
 
     def __setstate__(self, state):
         db.Database.__setstate__(self, state)
@@ -920,6 +995,10 @@ class Database(db.Database):
             self.roles.set(adminRole.name, adminRole)
             Permission.add("all")
 
+        if not hasattr(self, "sessions"):
+            self.logger.debug("Session table not found, adding to database")
+            self.sessions = SessionTable()
+
 #
 # Authentication & Authorization resource classes
 #
@@ -935,25 +1014,49 @@ class LoginResource(Resource):
         self.logger.debug("render_POST(%r)", request)
         args = self.cleanPostData(request, convertToCamelCase=True)
         self.logger.debug("args: %r", args)
+        username = args.get("username", "")
+        password = args.get("password", "")
 
-        user = self.getDatabase().users.get(args.get("username", ""))
-        if user and user.checkPassword(args.get("password", "")):
-            sessionData = self.getSessionData(request)
-            sessionData.user = user.username
-            
-            import datetime
-            sessionData.expires = datetime.datetime.utcnow() \
-                + datetime.timedelta(seconds=self.getRoot().options.sessionTimeoutHard)
-        else:
+        user = self.getDatabase().users.get(username)
+        if not user:
             self.forbidden(request)
-            return "Forbidden"
+            return "Authentication failed!"
+        
+        from twisted.internet import threads
+        d = threads.deferToThread(user.checkPassword, password)
+        
+        def cb(result):
+            if result:
+                sth = self.getRoot().options.sessionTimeoutHard
+                sts = self.getRoot().options.sessionTimeoutSoft
+                sessionId = self.getDatabase().sessions.create(username, sth, sts)
+                self.setSessionCookie(request, sessionId)
+                
+                if self.checkAccept(request, "text/html"):
+                    redirectUrl = args.get("redirectUrl")
+                    if redirectUrl:
+                        self.seeOther(request, redirectUrl)
+                    else:
+                        self.seeOther(request, "/")
+                elif self.acceptsJson(request):
+                    self.success(request)
+                    request.write(json.dumps({"session-id": sessionId}))
+                else:
+                    self.success(request)
+                    request.write("No supported media type requested. Session ID: %s" \
+                                      % sessionId)
+            else:
+                if self.acceptsJson(request):
+                    self.forbidden(request)
+                    request.write(json.dumps({"message": "Authentication failed"}))
+                else:
+                    self.forbidden(request)
+                    request.write("Authentication failed")
 
-        redirectUrl = args.get("redirectUrl")
-        if redirectUrl:
-            self.seeOther(request, redirectUrl)
-        else:
-            self.seeOther(request, "/")
-        return ""
+            request.finish()
+
+        d.addCallback(cb)
+        return server.NOT_DONE_YET
 
 class UsersAdminResource(DatabaseCollectionResource):
     requireAuth = True
@@ -978,10 +1081,6 @@ class UsersAdminResource(DatabaseCollectionResource):
                                      key=lambda x: x[0]):
             user.url = self.resolveUrl(str(request.URLPath()), username)
             users.append(user)
-
-        roles = self.getDatabase().roles.itervalues()
-        self.logger.debug("Roles: %r", roles)
-
 
         return {"users": sorted(users, key=lambda x: x.username),
                 "roles": sorted(map(lambda x: x.name, self.getDatabase().roles.itervalues())),
@@ -1066,7 +1165,6 @@ class RolesAdminResource(DatabaseCollectionResource):
                                             RoleAdminResource,
                                             "roles",
                                             parent)
-        Permission.add("-".join([self.__class__.__name__, "GET"]))
 
     def getHtml(self, request):
         self.logger.debug("getHtml(%r)", request)
@@ -1089,8 +1187,6 @@ class RoleAdminResource(DatabaseEntityResource):
 
     def __init__(self, id, parent):
         DatabaseEntityResource.__init__(self, "roles", id, parent)
-        for method in ["GET", "PUT", "DELETE"]:
-            Permission.add("-".join([self.__class__.__name__, method]))
 
     def getHtml(self, request):
         self.logger.debug("getHtml(%r)", request)
@@ -1704,9 +1800,6 @@ class RootResource(Resource):
     def run(self):
         site = server.Site(self)
         
-        Session.sessionTimeout = self.options.sessionTimeoutSoft
-        site.sessionFactory = Session
-
         self.listen(site, [self.options.port] + self.options.extraPorts)
 
         if self.options.enableSsl:
@@ -1773,11 +1866,10 @@ class Issues(DatabaseCollectionResource):
 
 class Issue(DatabaseEntityResource):
     def __init__(self, id, parent):
-        DatabaseEntityResource.__init__(self, "issues", parent)
-        self.id = id
+        DatabaseEntityResource.__init__(self, "issues", id, parent)
 
     def getHtml(self, request):
-        i = self.getTable().get(self.id)
+        i = self.getEntity()
         if i:
             issue = i
         else:
@@ -1788,7 +1880,7 @@ class Issue(DatabaseEntityResource):
         return {"issue": issue}
 
     def getJson(self, request):
-        h = self.getTable().get(self.id)
+        h = self.getEntity()
         if not h:
             self.notFound(request)
         return h
@@ -1798,7 +1890,7 @@ class Issue(DatabaseEntityResource):
             self.deleteAllIssues()
             self.success(request)
         elif self.getTable().get(self.id):
-            self.deleteIssue()
+            self.deleteEntity
             self.success(request)
         else:
             self.notFound(request)
@@ -1806,7 +1898,4 @@ class Issue(DatabaseEntityResource):
 
     def deleteAllIssues(self):
         self.getTable().clear()
-
-    def deleteIssue(self):
-        self.getTable().delete(self.id)
 

@@ -43,13 +43,20 @@ class Table(object):
     logger = None
     __database = None
 
-    def __init__(self, tableName, database=None, deepCopy=True):
+    def __init__(self, tableName, database=None, deepCopy=True, persist=True):
         self.__tableName = tableName
         self.__deepCopy = deepCopy
         self.__database = database
+        self.__persist = persist
         setattr(self, tableName, {})
         if not self.__class__.logger:
             self.__class__.logger = util.getLogger(self)
+
+    def __getstate__(self):
+        odict = self.__dict__.copy()
+        if not self.__persist:
+            odict[self.__tableName] = {}
+        return odict
 
     def __setstate__(self, state):
         self.__dict__.update(state)
