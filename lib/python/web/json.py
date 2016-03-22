@@ -34,6 +34,8 @@ class JsonEncoder(json.JSONEncoder):
             return {"secondsSinceEpoch": (obj - datetime.datetime(1970, 1, 1)).total_seconds(),
                     "iso8601Full": obj.strftime("%Y-%m-%dT%H:%M:%S%z"),
                     "iso8601": obj.strftime("%Y-%m-%d %H:%M:%S")}
+        if type(obj) == set or type(obj) == frozenset:
+            return list(obj)
         else:
             return json.JSONEncoder.default(self, obj)
 

@@ -32,7 +32,7 @@ import guernsey.web.model as gwm
 import guernsey.db as db
 from guernsey import Object
 
-import logging, os, sys, datetime, hashlib
+import logging, os, sys, datetime, hashlib, copy
 
 class Resource(resource.Resource):
     #
@@ -54,8 +54,10 @@ class Resource(resource.Resource):
     requireAuth = False
     useDefaultPermissions = True
     permissionsRegistered = False
+    autoCheckGetPermissions = True
     insecureTransportWarning = False
     sessionCookieName = "GUERNSEY_SESSION"
+    forbiddenMessage = "Forbidden"
 
     def __init__(self, parent=None, root=None):
         resource.Resource.__init__(self)
@@ -186,6 +188,13 @@ class Resource(resource.Resource):
                                        templateFile)
 
     def __getHtml(self, request):
+        if self.requireAuth and self.autoCheckGetPermissions:
+            if self.checkPermission(request):
+                self.logger.debug("User has permission to access this resource")
+            else:
+                self.logger.debug("User does NOT have permission to access this resource")
+                self.forbidden(request)
+                return self.forbiddenMessage
         res = self.getHtml(request)
         if res is server.NOT_DONE_YET:
             return res
@@ -197,6 +206,13 @@ class Resource(resource.Resource):
         return "<html>Hello HTML: %s</html>\n" % self.__class__.__name__
 
     def __getJson(self, request):
+        if self.requireAuth and self.autoCheckGetPermissions:
+            if self.checkPermission(request):
+                self.logger.debug("User has permission to access this resource")
+            else:
+                self.logger.debug("User does NOT have permission to access this resource")
+                self.forbidden(request)
+                return json.dumps({"error": self.forbiddenMessage})
         res = self.getJson(request)
         if res is server.NOT_DONE_YET:
             return res
@@ -857,6 +873,11 @@ class UserModel(gwm.Model):
     def checkPassword(self, password):
         return self.passwordHash.equal(password)
 
+    def __json__(self):
+        u = copy.deepcopy(self)
+        del u.passwordHash
+        return u.__dict__
+
 class UserTable(db.Table):
     def __init__(self, database):
         db.Table.__init__(self, "users", database=database)
@@ -1043,7 +1064,7 @@ class LoginResource(Resource):
                         self.seeOther(request, "/")
                 elif self.acceptsJson(request):
                     self.success(request)
-                    request.write(json.dumps({"session-id": sessionId}))
+                    request.write(json.dumps({"session-id": sessionId}) + "\n")
                 else:
                     self.success(request)
                     request.write("No supported media type requested. Session ID: %s" \
@@ -1051,7 +1072,7 @@ class LoginResource(Resource):
             else:
                 if self.acceptsJson(request):
                     self.forbidden(request)
-                    request.write(json.dumps({"message": "Authentication failed"}))
+                    request.write(json.dumps({"message": "Authentication failed"}) + "\n")
                 else:
                     self.forbidden(request)
                     request.write("Authentication failed")
@@ -1072,12 +1093,6 @@ class UsersAdminResource(DatabaseCollectionResource):
 
     def getHtml(self, request):
         self.logger.debug("getHtml(%r)", request)
-        if self.checkPermission(request):
-            self.logger.debug("User has permission to access this resource")
-        else:
-            self.logger.debug("User does NOT have permission to access this resource")
-            self.forbidden(request)
-            return "Forbidden"
 
         users = []
         for username, user in sorted(self.getEntityCollection(),
@@ -1089,6 +1104,10 @@ class UsersAdminResource(DatabaseCollectionResource):
                 "roles": sorted(map(lambda x: x.name, self.getDatabase().roles.itervalues())),
                 "permissions": sorted(Permission.all)}
 
+    def getJson(self, request):
+        self.logger.debug("getJson(%r)", request)
+        return self.getEntityCollection(resultType=dict)
+
 class UserAdminResource(DatabaseEntityResource):
     requireAuth = True
 
@@ -1097,13 +1116,6 @@ class UserAdminResource(DatabaseEntityResource):
 
     def getHtml(self, request):
         self.logger.debug("getHtml(%r)", request)
-        if self.checkPermission(request):
-            self.logger.debug("User has permission to access this resource")
-        else:
-            self.logger.debug("User does NOT have permission to access this resource")
-            self.forbidden(request)
-            return "Forbidden"
-        
         u = self.getEntity()
         if u:
             user = u
@@ -1112,6 +1124,10 @@ class UserAdminResource(DatabaseEntityResource):
             user = UserModel("", "")
         user.found = bool(u)
         return {"user": user}
+
+    def getJson(self, request):
+        self.logger.debug("getJson(%r)", request)
+        return self.getEntity()
 
     def render_PUT(self, request):
         self.logger.debug("render_PUT(%r)", request)
@@ -1171,19 +1187,16 @@ class RolesAdminResource(DatabaseCollectionResource):
 
     def getHtml(self, request):
         self.logger.debug("getHtml(%r)", request)
-        if self.checkPermission(request):
-            self.logger.debug("User has permission to access this resource")
-        else:
-            self.logger.debug("User does NOT have permission to access this resource")
-            self.forbidden(request)
-            return "Forbidden"
-
         roles = []
         for rolename, role in sorted(self.getEntityCollection(),
                                      key=lambda x: x[0]):
             role.url = self.resolveUrl(str(request.URLPath()), rolename)
             roles.append(role)
         return {"roles": roles, "permissions": sorted(Permission.all)}
+
+    def getJson(self, request):
+        self.logger.debug("getJson(%r)", request)
+        return self.getEntityCollection(resultType=dict)
 
 class RoleAdminResource(DatabaseEntityResource):
     requireAuth = True
@@ -1193,13 +1206,6 @@ class RoleAdminResource(DatabaseEntityResource):
 
     def getHtml(self, request):
         self.logger.debug("getHtml(%r)", request)
-        if self.checkPermission(request):
-            self.logger.debug("User has permission to access this resource")
-        else:
-            self.logger.debug("User does NOT have permission to access this resource")
-            self.forbidden(request)
-            return "Forbidden"
-        
         r = self.getEntity()
         if r:
             role = r
@@ -1208,6 +1214,10 @@ class RoleAdminResource(DatabaseEntityResource):
             role = RoleModel("")
         role.found = bool(r)
         return {"role": role}
+
+    def getJson(self, request):
+        self.logger.debug("getJson(%r)", request)
+        return self.getEntity()
 
     def render_PUT(self, request):
         self.logger.debug("render_PUT(%r)", request)
@@ -1262,14 +1272,11 @@ class PermissionsResource(Resource):
 
     def getHtml(self, request):
         self.logger.debug("getHtml(%r)", request)
-        if self.checkPermission(request):
-            self.logger.debug("User has permission to access this resource")
-        else:
-            self.logger.debug("User does NOT have permission to access this resource")
-            self.forbidden(request)
-            return "Forbidden"
-
         return {"permissions": sorted(Permission.all, key=lambda x: x)}
+
+    def getJson(self, request):
+        self.logger.debug("getJson(%r)", request)
+        return Permission.all
 
 class TwistedLoggingObserver(twistedlog.PythonLoggingObserver):
     # This method is a modified version of

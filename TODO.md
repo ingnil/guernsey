@@ -6,7 +6,9 @@
 - [x] Role administration resource
 - [x] Default administrator user
 - [x] Hard session timeout
-- [ ] JSON representations for all Permission/Role/User resource classes
+- [x] JSON representations for all Permission/Role/User resource classes
+- [ ] Support for sub-roles
+- [ ] Support for user/role modification
 
 ## Other
 
