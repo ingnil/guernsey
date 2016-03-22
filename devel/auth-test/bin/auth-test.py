@@ -256,6 +256,14 @@ class ProcessesResource(rest.Resource):
     # if available to convert an object to JSON.
     #
     def getJson(self, request):
+        self.logger.debug("getJson(%r)", request)
+        if self.checkPermission(request):
+            self.logger.debug("User has permission to access this resource")
+        else:
+            self.logger.debug("User does NOT have permission to access this resource")
+            self.forbidden(request)
+            return json.dumps({"error": "Permission denied"})
+
         deferred = self.prepareProcessList()
 
         def cb(processes):
