@@ -7,10 +7,14 @@
 - [x] Default administrator user
 - [x] Hard session timeout
 - [x] JSON representations for all Permission/Role/User resource classes
-- [ ] Support for sub-roles
-- [ ] Support for user/role modification
+- [x] Support for sub-roles
+- [x] Support for role modification
+- [ ] Support for user modification
+- [ ] Ability to send email
+- [ ] Support request of new password
+- [ ] Convert Permission class to regular Table subclass
 
 ## Other
 
 - [ ] Add user-selectable Cache-Control
-
+- [ ] Add ability to return deferred from getHtml() and getJson()

@@ -22,17 +22,57 @@
     <script type="text/javascript" src="/libjs/RoleAdminResource.js"></script>
     <h1>$title</h1>
     <p><a href="..">Up</a></p>
+    #if $role.found
     <input type="hidden" id="name" value="$role.name"/>
-    <h2>Permissions</h2>
-    <ul>
-      #if len($role.permissions) == 0
-      No permissions assigned
-      #else
-      #for $permission in $role.permissions
-      <li>$permission</li>
-      #end for
-      #end if
-    </ul>
-    <p><button type="button" id="delete-role">Delete role</button></p>
+    <table>
+      <tr>
+	<th>Name</th>
+	<td>$role.name</td>
+      </tr>
+      <tr>
+	<th>Sub-roles</th>
+	<td>
+	  <select name="subroles" size="10" multiple="multiple" id="subroles">
+	    #for $r in $allRoles
+	    <option
+	       value="$r"
+	       #if $r in $role.subRoles then selected="selected" else selected=""#>
+	      $r
+	    </option>
+	    #end for
+	  </select>
+	</td>
+      </tr>
+      <tr>
+	<th>Permissions</th>
+	<td>
+	  <select name="permissions" size="10" multiple="multiple" id="permissions">
+	    #for $permission in $allPermissions
+	    <option
+	       value="$permission"
+	       #if $permission in $role.permissions then selected="selected" else selected=""#>
+	      $permission
+	    </option>
+	    #end for
+	  </select>
+	</td>
+      </tr>
+    </table>
+    <p>
+      <button type="button" id="update-role">Update role</button>
+      <button type="button" id="delete-role">Delete role</button>
+    </p>
+    <div id="dialog-confirm" title="Delete Role?">
+      <p>
+	<span class="ui-icon ui-icon-alert" style="float: left; margin: 0px 7px 20px 0px;"></span>
+	Really delete role?
+      </p>
+      <p>
+	Make sure that no other roles have this role as a sub-role.
+      </p>
+    </div>
+    #else
+    Role not found
+    #end if
   </body>
 </html>

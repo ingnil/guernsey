@@ -24,7 +24,7 @@
     <p><a href="..">Up</a></p>
     <table>
       <thead>
-	<tr><th>Name</th><th>Permissions</th></tr>
+	<tr><th>Name</th><th>Sub-roles</th><th>Permissions</th></tr>
       </thead>
       <tbody>
 	#for $role in $roles
@@ -35,6 +35,11 @@
 	    #else
 	    <a href="$role.url">$role.name</a>
 	    #end if
+	  </td>
+	  <td>
+	    #for $r in $role.subRoles
+	    $r<br />
+	    #end for
 	  </td>
 	  <td>
 	    #for $permission in $role.permissions
@@ -51,6 +56,16 @@
 	<tr>
 	  <th>Name</th>
 	  <td><input type="text" name="name" id="name"/></td>
+	</tr>
+	<tr>
+	  <th>Sub-roles</th>
+	  <td>
+	    <select name="subroles" size="10" multiple="multiple" id="subroles">
+	      #for $role in $roles
+	      <option value="$role.name">$role.name</option>
+	      #end for
+	    </select>
+	  </td>
 	</tr>
 	<tr>
 	  <th>Permissions</th>

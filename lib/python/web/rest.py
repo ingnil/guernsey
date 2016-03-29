@@ -74,6 +74,7 @@ class Resource(resource.Resource):
             self.templateSearchPath += [self._libraryTemplatePath, self._libraryPath]
         if self.requireAuth and self.useDefaultPermissions and not self.permissionsRegistered:
             self.registerDefaultPermissions()
+            self.permissionsRegistered = True
 
     def getParent(self):
         return self.parent
@@ -546,6 +547,12 @@ class Resource(resource.Resource):
         self.setLocationAbs(request, newUrl)
         return ""
 
+    def errorMessage(self, request, messageFmt, *args):
+        msg = messageFmt % args
+        if self.acceptsJson(request):
+            return json.dumps({"error": msg}) + "\n"
+        else:
+            return msg + "\n"
 
 class ConfigVariable(object):
     def __init__(self, name, defaultValue="", desc=""):
@@ -703,6 +710,9 @@ class DatabaseEntityResource(DatabaseResource):
 
     def setEntity(self, entity):
         self.getTable().set(self.id, entity)
+
+    def updateEntity(self, entity, createIfNotFound=False):
+        self.getTable().update(self.id, entity, createIfNotFound)
 
     def deleteEntity(self):
         self.getTable().delete(self.id)
@@ -1141,20 +1151,16 @@ class UserAdminResource(DatabaseEntityResource):
             self.forbidden(request)
             return "Forbidden"
 
-        u = self.getEntity()
-        if u:
-            if u.username == "admin":
-                self.forbidden(request)
-                return "Forbidden: Cannot edit built-in user 'admin'."
-            # Update existing
-            pass
-        else:
-            user = UserModel(self.id, args.get("password", ""))
-            user.setRoles(args.get("roles", []))
-            user.setPermissions(args.get("permissions", []))
-            self.setEntity(user)
-            self.success(request)
-            return ""
+        if self.getId() == "admin":
+            self.forbidden(request)
+            return "Forbidden: Cannot edit built-in user 'admin'."
+
+        user = UserModel(self.getId(), args.get("password", ""))
+        user.setRoles(args.get("roles", []))
+        user.setPermissions(args.get("permissions", []))
+        self.updateEntity(user, createIfNotFound=True)
+        self.success(request)
+        return ""
 
     def render_DELETE(self, request):
         self.logger.debug("render_DELETE(%r)", request)
@@ -1165,11 +1171,12 @@ class UserAdminResource(DatabaseEntityResource):
             self.forbidden(request)
             return "Forbidden"
 
+        if self.getId() == "admin":
+            self.forbidden(request)
+            return "Forbidden: Cannot remove built-in user 'admin'."
+
         u = self.getEntity()
         if u:
-            if u.username == "admin":
-                self.forbidden(request)
-                return "Forbidden: Cannot remove built-in user 'admin'."
             self.deleteEntity()
             self.success(request)
         else:
@@ -1206,6 +1213,7 @@ class RoleAdminResource(DatabaseEntityResource):
 
     def getHtml(self, request):
         self.logger.debug("getHtml(%r)", request)
+
         r = self.getEntity()
         if r:
             role = r
@@ -1213,7 +1221,10 @@ class RoleAdminResource(DatabaseEntityResource):
             self.notFound(request)
             role = RoleModel("")
         role.found = bool(r)
-        return {"role": role}
+
+        return {"role": role,
+                "allRoles": self.getParent().getEntityCollection(resultType=dict),
+                "allPermissions": sorted(Permission.all)}
 
     def getJson(self, request):
         self.logger.debug("getJson(%r)", request)
@@ -1221,7 +1232,7 @@ class RoleAdminResource(DatabaseEntityResource):
 
     def render_PUT(self, request):
         self.logger.debug("render_PUT(%r)", request)
-        args = self.cleanPostData(request, ignore=["permissions"])
+        args = self.cleanPostData(request, ignore=["permissions", "subroles"])
         self.logger.debug("args: %r", args)
 
         if self.checkPermission(request):
@@ -1229,20 +1240,33 @@ class RoleAdminResource(DatabaseEntityResource):
         else:
             self.logger.debug("User does NOT have permission to access this resource")
             self.forbidden(request)
-            return "Forbidden"
+            return self.errorMessage(request, "Forbidden")
 
-        r = self.getEntity()
-        if r:
-            if role.name == "admin":
-                self.forbidden(request)
-                return "Forbidden: Cannot edit built-in role 'admin'."
-            # Update existing
-            pass
-        else:
-            role = RoleModel(self.id, args.get("permissions", []))
-            self.setEntity(role)
-            self.success(request)
-            return ""
+        if self.getId() == "admin":
+            self.badRequest(request)
+            return self.errorMessage(request, "Cannot edit built-in role 'admin'.")
+
+        permissions = args.get("permissions", [])
+        for perm in permissions:
+            if not perm in Permission.all:
+                self.badRequest(request)
+                return self.errorMessage(request,
+                                         "Cannot create role with unknown permission '%s'.",
+                                         perm)
+
+        subRoles = args.get("subroles", [])
+        allRoles = self.getParent().getEntityCollection(resultType=dict)
+        for subRole in subRoles:
+            if not subRole in allRoles:
+                self.badRequest(request)
+                return self.errorMessage(request,
+                                         "Cannot create role with unknown sub-role '%s'.",
+                                         subRole)
+
+        role = RoleModel(self.getId(), permissions, subRoles)
+        self.updateEntity(role, createIfNotFound=True)
+        self.success(request)
+        return ""
 
     def render_DELETE(self, request):
         self.logger.debug("render_DELETE(%r)", request)
@@ -1251,13 +1275,14 @@ class RoleAdminResource(DatabaseEntityResource):
         else:
             self.logger.debug("User does NOT have permission to access this resource")
             self.forbidden(request)
-            return "Forbidden"
+            return self.errorMessage(request, "Forbidden")
+
+        if self.getId() == "admin":
+            self.badRequest(request)
+            return self.errorMessage(request, "Cannot delete built-in role 'admin'.")
 
         r = self.getEntity()
         if r:
-            if r.name == "admin":
-                self.forbidden(request)
-                return "Forbidden: Cannot delete built-in role 'admin'."
             self.deleteEntity()
             self.success(request)
         else:
