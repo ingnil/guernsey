@@ -22,27 +22,58 @@
     <script type="text/javascript" src="/libjs/UserAdminResource.js"></script>
     <h1>$title</h1>
     <p><a href="..">Up</a></p>
-    <input type="hidden" id="username" value="$user.username"/>
-    <h2>Roles</h2>
-    <ul>
-      #if len($user.roles) == 0
-      No roles assigned
-      #else
-      #for $role in $user.roles
-      <li><a href="/admin/roles/$role">$role</a></li>
-      #end for
-      #end if
-    </ul>
-    <h2>Permissions</h2>
-    <ul>
-      #if len($user.permissions) == 0
-      No permissions assigned
-      #else
-      #for $permission in $user.permissions
-      <li>$permission</li>
-      #end for
-      #end if
-    </ul>
-    <p><button type="button" id="delete-user">Delete user</button></p>
+    #if $user.found
+    <table>
+      <tr>
+	<th>Username</th>
+	<td id="username">$user.username</td>
+      </tr>
+      <tr>
+	<th>Password</th>
+	<td><input type="password" name="password" id="password"/></td>
+      </tr>
+      <tr>
+	<th>Roles</th>
+	<td>
+	  <select name="roles" id="roles" size="10" multiple="multiple">
+	    #for $r in $roles
+	    <option
+	       value="$r"
+	       #if $r in $user.roles then selected="selected" else selected=""#>
+	      $r
+	    </option>
+	    #end for
+	  </select>
+	</td>
+      </tr>
+      <tr>
+	<th>Permissions</th>
+	<td>
+	  <select name="permissions" id="permissions" size="10" multiple="multiple">
+	    #for $p in $permissions
+	    <option
+	       value="$p"
+	       #if $p in $user.permissions then selected="selected" else selected=""#>
+	      $p
+	    </option>
+	    #end for
+	  </select>
+	</td>
+      </tr>
+    </table>
+    <p>
+      <button type="button" id="update-user">Update user</button>
+      <button type="button" id="delete-user">Delete user</button>
+    </p>
+    <div id="dialog-confirm" title="Delete Role?">
+      <p>
+	<span class="ui-icon ui-icon-alert"
+	      style="float: left; margin: 0px 7px 20px 0px;"></span>
+	Really delete user?
+      </p>
+    </div>
+    #else
+    User not found
+    #end if
   </body>
 </html>

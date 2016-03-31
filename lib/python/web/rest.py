@@ -840,6 +840,20 @@ class PasswordHash(Object):
         pwHash = self._passwordToKey(password, self.salt, self.rounds, self.alg)
         return pwHash == self.pwHash
 
+    def __repr__(self):
+        output = self.__class__.__name__ + "{"
+
+        import binascii
+        pairs = {"alg": self.alg,
+                 "rounds": self.rounds,
+                 "salt": binascii.hexlify(self.salt),
+                 "pwHash": binascii.hexlify(self.pwHash)}
+        members = []
+        for k, v in pairs.iteritems():
+            members.append("%s: %r" % (k, v))
+        output += ", ".join(members) + "}"
+        return output
+
 class UserModel(gwm.Model):
     username = None
     passwordHash = None
@@ -849,7 +863,8 @@ class UserModel(gwm.Model):
     def __init__(self, username, password):
         gwm.Model.__init__(self)
         self.username = username
-        self.setPassword(password)
+        if password:
+            self.setPassword(password)
         self.roles = set([])
         self.permissions = set([])
 
@@ -1133,7 +1148,9 @@ class UserAdminResource(DatabaseEntityResource):
             self.notFound(request)
             user = UserModel("", "")
         user.found = bool(u)
-        return {"user": user}
+        return {"user": user,
+                "roles": sorted(map(lambda x: x.name, self.getDatabase().roles.itervalues())),
+                "permissions": sorted(Permission.all)}
 
     def getJson(self, request):
         self.logger.debug("getJson(%r)", request)
@@ -1149,15 +1166,36 @@ class UserAdminResource(DatabaseEntityResource):
         else:
             self.logger.debug("User does NOT have permission to access this resource")
             self.forbidden(request)
-            return "Forbidden"
+            return self.errorMessage(request, "Forbidden")
 
         if self.getId() == "admin":
-            self.forbidden(request)
-            return "Forbidden: Cannot edit built-in user 'admin'."
+            self.badRequest(request)
+            return self.errorMessage(request, "Cannot edit built-in user 'admin'.")
 
-        user = UserModel(self.getId(), args.get("password", ""))
-        user.setRoles(args.get("roles", []))
-        user.setPermissions(args.get("permissions", []))
+        permissions = args.get("permissions", [])
+        for perm in permissions:
+            if not perm in Permission.all:
+                self.badRequest(request)
+                return self.errorMessage(request,
+                                         "Cannot create user with unknown permission '%s'.",
+                                         perm)
+
+        roles = args.get("roles", [])
+        allRoles = self.getDatabase().roles.iterkeys()
+        for role in roles:
+            if not role in allRoles:
+                self.badRequest(request)
+                return self.errorMessage(request,
+                                         "Cannot create user with unknown role '%s'.",
+                                         role)
+
+        password = args.get("password", "")
+        user = UserModel(self.getId(), password)
+        user.setRoles(roles)
+        user.setPermissions(permissions)
+        if not self.getEntity() and not password:
+            self.badRequest(request)
+            return self.errorMessage(request, "Cannot create user with empty password.")
         self.updateEntity(user, createIfNotFound=True)
         self.success(request)
         return ""
@@ -1169,11 +1207,11 @@ class UserAdminResource(DatabaseEntityResource):
         else:
             self.logger.debug("User does NOT have permission to access this resource")
             self.forbidden(request)
-            return "Forbidden"
+            return self.errorMessage("Forbidden")
 
         if self.getId() == "admin":
-            self.forbidden(request)
-            return "Forbidden: Cannot remove built-in user 'admin'."
+            self.badRequest(request)
+            return self.errorMessage(request, "Cannot remove built-in user 'admin'.")
 
         u = self.getEntity()
         if u:

@@ -9,10 +9,11 @@
 - [x] JSON representations for all Permission/Role/User resource classes
 - [x] Support for sub-roles
 - [x] Support for role modification
-- [ ] Support for user modification
+- [x] Support for user modification
 - [ ] Ability to send email
 - [ ] Support request of new password
 - [ ] Convert Permission class to regular Table subclass
+- [ ] Logout resource
 
 ## Other
 
