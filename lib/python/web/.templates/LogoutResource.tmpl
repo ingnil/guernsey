@@ -16,17 +16,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <html>
-  #set global $title = "AuthTest"
-  #include $lookupTemplate("head.inc")
-<body>
-<h1>$title</h1>
-<p><a href="login">Login</a></p>
-<p><a href="logout">Logout</a></p>
-<p><a href="profile">Profile</a></p>
-<p><a href="admin">Administration</a></p>
-<ul>
-<li><a href="processes">All processes</a></li>
-<li><a href="root-processes">Processes owned by root</a></li>
-</ul>
-</body>
+  #set global $pageTitle = "Logout"
+  #set global $redirect = {"seconds": 3, "url": "/"}
+  #include $lookupTemplate("libhead.inc")
+  <body>
+    <h1>$title</h1>
+    <p>$message</p>
+    <p>Redirecting...</p>
+  </body>
 </html>

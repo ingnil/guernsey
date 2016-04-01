@@ -22,6 +22,9 @@
 #set global $title = $appName + " - " + $pageTitle
 #end if
 <title>$title</title>
+#if $getVar("redirect", None)
+<meta http-equiv="refresh" content="$redirect['seconds']; url=$redirect['url']">
+#end if
 <link rel="stylesheet" type="text/css" href="/libcss/style.css">
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
 <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.10.4/themes/ui-lightness/jquery-ui.css" />

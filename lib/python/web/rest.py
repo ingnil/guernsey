@@ -58,6 +58,7 @@ class Resource(resource.Resource):
     insecureTransportWarning = False
     sessionCookieName = "GUERNSEY_SESSION"
     forbiddenMessage = "Forbidden"
+    cacheControl = "no-cache"
 
     def __init__(self, parent=None, root=None):
         resource.Resource.__init__(self)
@@ -281,7 +282,7 @@ class Resource(resource.Resource):
         if not request.path.endswith("/"):
             return self.redirectWithEndingSlash(request)
 
-        request.setHeader("Cache-Control", "no-cache")
+        request.setHeader("Cache-Control", self.cacheControl)
 
         return self.performContentNegotiation(request)
 
@@ -341,16 +342,23 @@ class Resource(resource.Resource):
     def setSessionCookie(self, request, value):
         request.addCookie(self.sessionCookieName, value, path="/")
 
-    def checkLoggedIn(self, request):
-        self.logger.debug("checkLoggedIn(%r)", request)
+    def getLoginSession(self, request):
+        self.logger.debug("getSession(%r)", request)
         sessionId = self.getBearerToken(request)
         if not sessionId:
             sessionId = self.getSessionIdFromCookie(request)
         if sessionId:
-            sessionModel = self.getDatabase().sessions.get(sessionId)
-            if sessionModel:
-                return sessionModel.username
-        return False
+            return self.getDatabase().sessions.get(sessionId)
+        else:
+            return None
+
+    def checkLoggedIn(self, request):
+        self.logger.debug("checkLoggedIn(%r)", request)
+        sessionModel = self.getLoginSession(request)
+        if sessionModel:
+            return sessionModel.username
+        else:
+            return None
 
     def checkPermission(self, request, permission=None):
         self.logger.debug("checkPermission(%r, %r)", request, permission)
@@ -705,8 +713,8 @@ class DatabaseEntityResource(DatabaseResource):
         DatabaseResource.__init__(self, tableName, parent)
         self.id = id
 
-    def getEntity(self):
-        return self.getTable().get(self.id)
+    def getEntity(self, getCopy=True):
+        return self.getTable().get(self.id, getCopy=getCopy)
 
     def setEntity(self, entity):
         self.getTable().set(self.id, entity)
@@ -938,14 +946,14 @@ class RoleTable(db.Table):
             return set([])
 
 class SessionModel(gwm.Model):
-    sessionId = None
+    id = None
     username = None
     expiresHard = None
     expiresSoft = None
     sessionTimeoutSoft = None
 
     def __init__(self, username, sessionTimeoutHard, sessionTimeoutSoft):
-        self.sessionId = hashlib.sha1(os.urandom(16)).hexdigest()
+        self.id = hashlib.sha1(os.urandom(16)).hexdigest()
         self.username = username
         now = datetime.datetime.utcnow()
         self.expiresHard = now + datetime.timedelta(seconds=sessionTimeoutHard)
@@ -977,14 +985,14 @@ class SessionTable(db.Table):
         remove = []
         for session in self.sessions.itervalues():
             if session.isExpired():
-                remove.append(session.sessionId)
+                remove.append(session.id)
         for sid in remove:
             self.delete(sid)
 
     def create(self, username, sessionTimeoutHard, sessionTimeoutSoft):
         session = SessionModel(username, sessionTimeoutHard, sessionTimeoutSoft)
-        self.set(session.sessionId, session)
-        return session.sessionId
+        self.set(session.id, session)
+        return session.id
 
     def get(self, id, default=None, getCopy=True):
         session = db.Table.get(self, id, default, getCopy)
@@ -1106,6 +1114,36 @@ class LoginResource(Resource):
 
         d.addCallback(cb)
         return server.NOT_DONE_YET
+
+class LogoutResource(Resource):
+    insecureTransportWarning = True
+
+    def deleteSession(self, session):
+        self.getDatabase().sessions.delete(session.id)
+
+    def getHtml(self, request):
+        session = self.getLoginSession(request)
+        if not session:
+            return {"message": "You are not logged in."}
+        else:
+            self.deleteSession(session)
+            return {"message": "You are now logged out."}
+        
+    def render_POST(self, request):
+        session = self.getLoginSession(request)
+        if not session:
+            if self.acceptsJson(request):
+                self.success(request)
+                return json.dumps({"message": "You are not logged in"})
+            else:
+                return "You are not logged in."
+        else:
+            self.deleteSession(session)
+            if self.acceptsJson(request):
+                self.success(request)
+                return json.dumps({"message": "You are now logged out"})
+            else:
+                return "You are now logged out."
 
 class UsersAdminResource(DatabaseCollectionResource):
     requireAuth = True
@@ -1341,6 +1379,62 @@ class PermissionsResource(Resource):
         self.logger.debug("getJson(%r)", request)
         return Permission.all
 
+class ProfileResource(DatabaseEntityResource):
+    requireAuth = True
+    autoCheckGetPermission = False
+
+    def __init__(self, parent):
+        DatabaseEntityResource.__init__(self, "users", None, parent)
+
+    def getHtml(self, request):
+        self.logger.debug("getHtml(%r)", request)
+        username = self.checkLoggedIn(request)
+        if username:
+            self.id = username
+        else:
+            self.forbidden(request)
+            return "Error: Not logged in"
+
+        u = self.getEntity()
+        if u:
+            user = u
+        else:
+            self.notFound(request)
+            user = UserModel("", "")
+        user.found = bool(u)
+        return {"user": user}
+
+    def getJson(self, request):
+        self.logger.debug("getJson(%r)", request)
+        username = self.checkLoggedIn(request)
+        if username:
+            self.id = username
+            return self.getEntity()
+        else:
+            self.forbidden(request)
+            return self.errorMessage(request, "Not logged in")
+        
+    def render_PUT(self, request):
+        self.logger.debug("render_PUT(%r)", request)
+        args = self.cleanPostData(request)
+        self.logger.debug("args: %r", args)
+
+        username = self.checkLoggedIn(request)
+        if username:
+            self.id = username
+        else:
+            self.forbidden(request)
+            return self.errorMessage(request, "Not logged in")
+
+        password = args.get("password", "")
+        if not password:
+            self.badRequest(request)
+            return self.errorMessage(request, "Password cannot be empty.")
+        user = self.getEntity(getCopy=False)
+        user.setPassword(password)
+        self.success(request)
+        return ""
+
 class TwistedLoggingObserver(twistedlog.PythonLoggingObserver):
     # This method is a modified version of
     # twisted.python.log.PythonLoggingObserver.emit()
@@ -1365,6 +1459,8 @@ class AdminResource(Resource):
         self.putChild("users", self.usersAdminResourceClass(self))
         self.putChild("roles", self.rolesAdminResourceClass(self))
         self.putChild("permissions", self.permissionsResourceClass(self))
+        self.putChild("config", ConfigResource(self))
+        self.putChild("issues", Issues(self))
 
     def getHtml(self, request):
         return {}
@@ -1380,6 +1476,7 @@ class RootResource(Resource):
     database = None
     databaseClass = Database
     adminResourceClass = AdminResource
+    profileResourceClass = ProfileResource
     appName = None
 
     # Log handlers
@@ -1472,11 +1569,10 @@ class RootResource(Resource):
                 self.putChild("libimages",
                               static.File(os.path.join(self._libraryTemplatePath, "images")))
     
-            self.putChild("config", ConfigResource(self))
-            self.putChild("issues", Issues(self))
             self.putChild("login", LoginResource(self))
+            self.putChild("logout", LogoutResource(self))
+            self.putChild("profile", self.profileResourceClass(self))
             self.putChild("admin", self.adminResourceClass(self))
-
 
         if self.options.dbFile and os.path.exists(self.options.dbFile):
             self.logger.info("Loading database from file %s", self.options.dbFile)

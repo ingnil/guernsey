@@ -16,17 +16,44 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <html>
-  #set global $pageTitle = "Administration"
+  #set global $pageTitle = "User Profile (%s)" % $user.username
   #include $lookupTemplate("libhead.inc")
-<body>
-<h1>$title</h1>
-<p><a href="..">Up</a></p>
-<ul>
-<li><a href="users">User Administration</a></li>
-<li><a href="roles">Role Administration</a></li>
-<li><a href="permissions">List of Permissions</a></li>
-<li><a href="config">Configuration</a></li>
-<li><a href="issues">Issues</a></li>
-</ul>
-</body>
+  <body>
+    <script type="text/javascript" src="/libjs/ProfileResource.js"></script>
+    <h1>$title</h1>
+    <p><a href="..">Up</a></p>
+    #if $user.found
+    <table>
+      <tr>
+	<th>Username</th>
+	<td id="username">$user.username</td>
+      </tr>
+      <tr>
+	<th>Password</th>
+	<td><input type="password" name="password" id="password"/></td>
+      </tr>
+      <tr>
+	<th>Roles</th>
+	<td>
+	  #for $r in $user.roles
+	  $r<br />
+	  #end for
+	</td>
+      </tr>
+      <tr>
+	<th>Permissions</th>
+	<td>
+	  #for $p in $user.permissions
+	  $p<br />
+	  #end for
+	</td>
+      </tr>
+    </table>
+    <p>
+      <button type="button" id="update-user">Update user</button>
+    </p>
+    #else
+    User not found
+    #end if
+  </body>
 </html>
